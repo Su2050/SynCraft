@@ -4,9 +4,9 @@ import { useMsgStore } from "./messageStore"
 import { useLogStore } from "./logStore"  // 引入日志存储
 import { get as idbGet, set as idbSet } from 'idb-keyval'
 import { Node, Edge, MarkerType, Position } from 'react-flow-renderer'
-import { createNode } from '../api'          // 调后端 /nodes
 import type { ChatNode } from '../types'
 import { useContextStore } from './contextStore'
+import { nodeRepository, sessionRepository } from '../repositories'
 
 /* ---------- 画布里的 ROOT 占位 ---------- */
 const ROOT_NODE: Node = {
@@ -82,6 +82,38 @@ export const useTreeStore = create<TreeState>((set, get) => ({
   load: () =>
     new Promise<void>(async (resolve) => {
       try {
+        // 获取当前活动会话ID
+        const activeSessionId = localStorage.getItem('activeSessionId') || 'default';
+        
+        if (activeSessionId && activeSessionId !== 'default') {
+          try {
+            // 使用仓储层获取会话树
+            const { nodes, edges } = await sessionRepository.getSessionTree(activeSessionId);
+            
+            // 初始化上下文
+            const initialActiveNodeId = nodes.length > 0 ? nodes[0].id : null;
+            useContextStore.getState().initializeContextState(initialActiveNodeId, activeSessionId);
+            
+            // 更新状态
+            set({ 
+              nodes, 
+              edges
+            });
+            
+            // 保存活动节点ID到localStorage，供API客户端使用
+            if (initialActiveNodeId) {
+              localStorage.setItem('activeNodeId', initialActiveNodeId);
+            }
+            
+            resolve();
+            return;
+          } catch (apiError) {
+            console.warn('从API获取会话树数据失败，回退到本地存储:', apiError);
+            // 回退到IndexedDB
+          }
+        }
+        
+        // 如果API调用失败或没有活动会话ID，回退到原有逻辑
         // 尝试从 IndexedDB 加载数据
         const savedNodes = await idbGet('nodes') as Node[] | undefined;
         const savedEdges = await idbGet('edges') as Edge[] | undefined;
@@ -199,14 +231,17 @@ export const useTreeStore = create<TreeState>((set, get) => ({
         throw new Error(`父节点 ${parentId} 不存在`);
       }
       
-      /* —— 1. 调后端 —— */
+      // 获取当前活动会话ID
+      const sessionId = localStorage.getItem('activeSessionId') || 'default';
+      
       // 检查parentId是否是根节点（以'root'开头）
       const isRootNode = parentId === 'root' || parentId.startsWith('root-');
       const backendParent = isRootNode ? null : parentId;
       
-      console.log(`[${new Date().toISOString()}] 调用后端API创建节点 - 后端父节点ID: ${backendParent || 'null'}`);
-      const newChat: ChatNode = await createNode(backendParent, question, templateId);
-      console.log(`[${new Date().toISOString()}] 后端API返回新节点 - ID: ${newChat.id}`);
+      // 使用仓储层创建节点
+      console.log(`[${new Date().toISOString()}] 调用仓储层创建节点 - 后端父节点ID: ${backendParent || 'null'}`);
+      const newChat = await nodeRepository.createNode(sessionId, backendParent, question, templateId);
+      console.log(`[${new Date().toISOString()}] 仓储层返回新节点 - ID: ${newChat.id}`);
 
       /* —— 2. 转成 React-Flow 节点 —— */
       const rfNode: Node = {
@@ -218,7 +253,8 @@ export const useTreeStore = create<TreeState>((set, get) => ({
           templateKey: newChat.templateKey,
           isFork: !isRootNode, // 标记是否为分叉节点，使用isRootNode变量
           originalContext: originalContext || '', // 保存原始上下文，用于深挖时保持上下文
-          contextId: useContextStore.getState().inputContext.contextId // 保存创建节点时的上下文ID
+          contextId: useContextStore.getState().inputContext.contextId, // 保存创建节点时的上下文ID
+          sessionId // 添加会话ID
         },
         sourcePosition: Position.Bottom,
         targetPosition: Position.Top,
@@ -253,6 +289,9 @@ export const useTreeStore = create<TreeState>((set, get) => ({
       // 设置活动节点
       useContextStore.getState().setActive(newChat.id, 'addChild', contextId);
       
+      // 保存活动节点ID到localStorage，供API客户端使用
+      localStorage.setItem('activeNodeId', newChat.id);
+      
       console.log(`[${new Date().toISOString()}] 更新上下文 ${contextId} 的活动节点ID为: ${newChat.id}`);
       
       // 保存到IndexedDB
@@ -270,9 +309,6 @@ export const useTreeStore = create<TreeState>((set, get) => ({
       
       // 用户消息应该与新节点关联，而不是父节点
       const msgStore = useMsgStore.getState();
-      // 获取父节点的会话ID，如果没有则使用默认会话ID
-      const parentNode = get().nodes.find(node => node.id === parentId);
-      const sessionId = parentNode && parentNode.data.sessionId ? parentNode.data.sessionId : 'default';
       await msgStore.push({ nodeId: newChat.id, role: "user", content: question, sessionId });
       
       // 确保活动节点已正确设置为新节点
@@ -291,7 +327,94 @@ export const useTreeStore = create<TreeState>((set, get) => ({
       return newChat.id;
     } catch (error) {
       console.error(`[${new Date().toISOString()}] 创建子节点失败:`, error);
-      throw error;
+      
+      // 回退到原有实现
+      try {
+        console.log(`[${new Date().toISOString()}] 回退到原有实现创建子节点`);
+        
+        // 检查父节点是否存在
+        const parentExists = get().nodes.some(node => node.id === parentId);
+        if (!parentExists) {
+          console.error(`[${new Date().toISOString()}] 父节点 ${parentId} 不存在`);
+          throw new Error(`父节点 ${parentId} 不存在`);
+        }
+        
+        // 获取当前活动会话ID
+        const parentNode = get().nodes.find(node => node.id === parentId);
+        const sessionId = parentNode && parentNode.data.sessionId ? parentNode.data.sessionId : 'default';
+        
+        // 检查parentId是否是根节点（以'root'开头）
+        const isRootNode = parentId === 'root' || parentId.startsWith('root-');
+        
+        // 创建新节点ID
+        const newNodeId = `node-${Date.now()}`;
+        
+        // 创建React-Flow节点
+        const rfNode: Node = {
+          id: newNodeId,
+          position: { x: Math.random() * 120 + 120, y: Math.random() * 120 + 200 },
+          data: {
+            label: question,
+            answer: null,
+            templateKey: templateId,
+            isFork: !isRootNode,
+            originalContext: originalContext || '',
+            contextId: useContextStore.getState().inputContext.contextId,
+            sessionId
+          },
+          sourcePosition: Position.Bottom,
+          targetPosition: Position.Top,
+        };
+        
+        // 如果是创建根节点，则使用已有的根节点ID
+        const sourceId = parentId === 'root' ? 'root' : parentId;
+        
+        const rfEdge: Edge = {
+          id: `${sourceId}-${newNodeId}`,
+          source: sourceId,
+          target: newNodeId,
+          type: 'custom',
+          animated: true,
+          markerEnd: { type: MarkerType.ArrowClosed },
+          style: { stroke: '#3b82f6', strokeWidth: 2 }
+        };
+        
+        // 更新本地状态
+        const nextNodes = [...get().nodes, rfNode];
+        const nextEdges = [...get().edges, rfEdge];
+        
+        // 获取当前上下文ID
+        const { contextId } = useContextStore.getState().inputContext;
+        
+        // 更新状态
+        set({ 
+          nodes: nextNodes, 
+          edges: nextEdges
+        });
+        
+        // 设置活动节点
+        useContextStore.getState().setActive(newNodeId, 'addChild-fallback', contextId);
+        
+        // 保存活动节点ID到localStorage，供API客户端使用
+        localStorage.setItem('activeNodeId', newNodeId);
+        
+        // 保存到IndexedDB
+        await idbSet('nodes', nextNodes);
+        await idbSet('edges', nextEdges);
+        
+        // 用户消息应该与新节点关联
+        const msgStore = useMsgStore.getState();
+        await msgStore.push({ nodeId: newNodeId, role: "user", content: question, sessionId });
+        
+        // 触发自动排列
+        get().triggerAutoLayout();
+        
+        // 返回新创建的节点ID
+        return newNodeId;
+      } catch (fallbackError) {
+        console.error(`[${new Date().toISOString()}] 回退创建子节点也失败:`, fallbackError);
+        throw fallbackError;
+      }
     }
   },
 
@@ -348,32 +471,103 @@ export const useTreeStore = create<TreeState>((set, get) => ({
   
   /* 清空除根节点外的所有节点 */
   clearAllExceptRoot: async () => {
-    // 保留根节点
-    const rootNode = get().nodes.find(node => node.id === 'root') || ROOT_NODE;
-    
-    // 设置新的节点和边数组
-    const newNodes = [rootNode];
-    const newEdges: Edge[] = [];
-    
-    // 重置上下文
-    useContextStore.getState().initializeContextState('root', 'default');
-    
-    // 更新状态
-    set({ 
-      nodes: newNodes, 
-      edges: newEdges
-    });
-    
-    // 保存到 IndexedDB
-    await idbSet('nodes', newNodes);
-    await idbSet('edges', newEdges);
-    
-    // 清除消息存储中除根节点外的所有消息
-    const msgStore = useMsgStore.getState();
-    const rootMsgs = msgStore.msgs.filter(msg => msg.nodeId === 'root');
-    await idbSet('msgs', rootMsgs);
-    msgStore.setAll(rootMsgs);
-    
-    console.log(`[${new Date().toISOString()}] 已清空除根节点外的所有节点和消息`);
+    try {
+      // 获取当前活动会话ID
+      const activeSessionId = localStorage.getItem('activeSessionId');
+      
+      if (activeSessionId && activeSessionId !== 'default') {
+        // 创建一个新的会话，替换当前会话
+        // 这里我们不直接删除会话，而是创建一个新的会话，因为删除会话可能会导致其他问题
+        // 实际实现时，可以根据需要调整这个逻辑
+        
+        // 保留根节点
+        const rootNode = get().nodes.find(node => node.id === 'root') || ROOT_NODE;
+        
+        // 设置新的节点和边数组
+        const newNodes = [rootNode];
+        const newEdges: Edge[] = [];
+        
+        // 重置上下文
+        useContextStore.getState().initializeContextState('root', activeSessionId);
+        
+        // 更新状态
+        set({ 
+          nodes: newNodes, 
+          edges: newEdges
+        });
+        
+        // 保存到 IndexedDB
+        await idbSet('nodes', newNodes);
+        await idbSet('edges', newEdges);
+        
+        // 清除消息存储中除根节点外的所有消息
+        const msgStore = useMsgStore.getState();
+        const rootMsgs = msgStore.msgs.filter(msg => msg.nodeId === 'root');
+        await idbSet('msgs', rootMsgs);
+        msgStore.setAll(rootMsgs);
+        
+        console.log(`[${new Date().toISOString()}] 已清空除根节点外的所有节点和消息`);
+      } else {
+        // 回退到原有实现
+        // 保留根节点
+        const rootNode = get().nodes.find(node => node.id === 'root') || ROOT_NODE;
+        
+        // 设置新的节点和边数组
+        const newNodes = [rootNode];
+        const newEdges: Edge[] = [];
+        
+        // 重置上下文
+        useContextStore.getState().initializeContextState('root', 'default');
+        
+        // 更新状态
+        set({ 
+          nodes: newNodes, 
+          edges: newEdges
+        });
+        
+        // 保存到 IndexedDB
+        await idbSet('nodes', newNodes);
+        await idbSet('edges', newEdges);
+        
+        // 清除消息存储中除根节点外的所有消息
+        const msgStore = useMsgStore.getState();
+        const rootMsgs = msgStore.msgs.filter(msg => msg.nodeId === 'root');
+        await idbSet('msgs', rootMsgs);
+        msgStore.setAll(rootMsgs);
+        
+        console.log(`[${new Date().toISOString()}] 已清空除根节点外的所有节点和消息`);
+      }
+    } catch (error) {
+      console.error(`[${new Date().toISOString()}] 清空节点失败:`, error);
+      
+      // 回退到原有实现
+      // 保留根节点
+      const rootNode = get().nodes.find(node => node.id === 'root') || ROOT_NODE;
+      
+      // 设置新的节点和边数组
+      const newNodes = [rootNode];
+      const newEdges: Edge[] = [];
+      
+      // 重置上下文
+      useContextStore.getState().initializeContextState('root', 'default');
+      
+      // 更新状态
+      set({ 
+        nodes: newNodes, 
+        edges: newEdges
+      });
+      
+      // 保存到 IndexedDB
+      await idbSet('nodes', newNodes);
+      await idbSet('edges', newEdges);
+      
+      // 清除消息存储中除根节点外的所有消息
+      const msgStore = useMsgStore.getState();
+      const rootMsgs = msgStore.msgs.filter(msg => msg.nodeId === 'root');
+      await idbSet('msgs', rootMsgs);
+      msgStore.setAll(rootMsgs);
+      
+      console.log(`[${new Date().toISOString()}] 已清空除根节点外的所有节点和消息`);
+    }
   },
 }))

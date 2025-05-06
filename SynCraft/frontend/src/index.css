@@ -1,0 +1,7 @@
+/* ---------- Tailwind 核心指令 ---------- */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ---------- 你自己的全局样式，可选 ---------- */
+/* body { font-family: Inter, sans-serif; } */

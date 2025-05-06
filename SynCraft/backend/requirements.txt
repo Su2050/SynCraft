@@ -1,0 +1,11 @@
+fastapi==0.110.0
+uvicorn[standard]==0.29.0
+httpx==0.27.0          # 新增
+python-dotenv==1.1.0   # 若本来已写，可保留
+sqlmodel==0.0.16
+nanoid==2.0.0
+
+# ─────────── Day 8: spaCy NER ───────────
+spacy==3.7.2
+# 预下载模型 wheel，避免容器里再跑 `python -m spacy download`
+en_core_web_sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.0/en_core_web_sm-3.7.0-py3-none-any.whl

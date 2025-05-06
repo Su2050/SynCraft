@@ -1,0 +1,20 @@
+{
+  "llm": {
+    "provider": "openrouter",
+    "api_url": "https://openrouter.ai/api/v1/chat/completions",
+    "models": {
+      "default": "anthropic/claude-3.7-sonnet",
+      "alternatives": [
+        "deepseek/deepseek-chat-v3-0324:free"
+      ]
+    },
+    "parameters": {
+      "temperature": 0.7,
+      "max_tokens": 512
+    },
+    "headers": {
+      "HTTP-Referer": "https://syncraft.app",
+      "X-Title": "SynCraft"
+    }
+  }
+}

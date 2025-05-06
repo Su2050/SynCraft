@@ -1,0 +1,41 @@
+/* 拖拽条样式 */
+.Resizer {
+  background: #ddd;
+  width: 7px;
+  cursor: col-resize;
+  z-index: 1;
+  margin: 0 -3px;
+}
+
+.Resizer:hover {
+  background: #999;
+}
+
+.Resizer.vertical {
+  width: 7px;
+  height: 100%;
+}
+
+.Resizer.horizontal {
+  height: 7px;
+  width: 100%;
+  cursor: row-resize;
+}
+
+.SplitPane {
+  position: relative;
+}
+
+.SplitPane.vertical {
+  display: flex;
+  flex-direction: row;
+}
+
+.SplitPane.horizontal {
+  display: flex;
+  flex-direction: column;
+}
+
+.Pane {
+  overflow: hidden;
+}

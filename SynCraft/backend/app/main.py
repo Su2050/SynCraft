@@ -3,6 +3,9 @@ from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
+import json
+from starlette.middleware.base import BaseHTTPMiddleware
+# backend/app/main.py
 
 # 导入API路由
 from app.api import api_router
@@ -32,6 +35,38 @@ with SQLSession(engine) as db:
 # 创建FastAPI应用
 app = FastAPI(title="SynCraft API")
 
+# 统一响应格式中间件
+class UnifiedResponseMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        # 调用下一个中间件或路由处理函数
+        response = await call_next(request)
+        
+        # 如果响应已经是JSONResponse
+        if isinstance(response, JSONResponse):
+            # 获取响应内容
+            content = response.body
+            
+            # 解析JSON内容
+            try:
+                data = json.loads(content)
+                
+                # 如果已经是统一格式，直接返回
+                if isinstance(data, dict) and "success" in data and ("data" in data or "error" in data):
+                    return response
+                
+                # 否则包装为统一格式
+                return JSONResponse(
+                    content={"success": True, "data": data},
+                    status_code=response.status_code,
+                    headers=dict(response.headers),
+                )
+            except:
+                # 如果不是有效的JSON，直接返回原响应
+                return response
+        
+        # 如果不是JSONResponse，直接返回原响应
+        return response
+
 # 配置CORS
 app.add_middleware(
     CORSMiddleware,
@@ -41,6 +76,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# 添加统一响应格式中间件 - 确保在所有其他中间件之后添加，这样它会最先执行
+app.add_middleware(UnifiedResponseMiddleware)
+
+# 打印日志，确认中间件已添加
+print("已添加统一响应格式中间件")
+
 # 注册API路由
 app.include_router(api_router)  # 所有API路由，包括新的LLM路由
 
@@ -49,7 +90,15 @@ app.include_router(api_router)  # 所有API路由，包括新的LLM路由
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-        content={"detail": exc.errors(), "body": exc.body},
+        content={"success": False, "error": exc.errors(), "body": exc.body},
+    )
+
+# 全局异常处理
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={"success": False, "error": str(exc)},
     )
 
 # 健康检查

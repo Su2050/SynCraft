@@ -8,6 +8,7 @@ import type {
   PaginatedResponse
 } from '@/types';
 import { isLocalMode } from '@/utils/backendHealth';
+import { parseApiResponse } from '@/utils/apiResponse';
 
 // API基础URL
 const API_BASE_URL = import.meta.env.VITE_BACKEND ? `${import.meta.env.VITE_BACKEND}/api/v1` : '/api/v1';
@@ -56,15 +57,10 @@ async function request<T>(
     const data = await response.json();
     console.log(`[${new Date().toISOString()}] API响应数据:`, data);
     
-    // 检查响应是否是ApiResponse格式
-    if (data && typeof data === 'object' && 'success' in data && 'data' in data) {
-      console.log(`[${new Date().toISOString()}] 返回ApiResponse格式数据:`, data.data);
-      return data.data as T;
-    }
-    
-    // 如果不是ApiResponse格式，直接返回数据
-    console.log(`[${new Date().toISOString()}] 返回非ApiResponse格式数据:`, data);
-    return data as T;
+    // 使用通用解析函数处理响应
+    const parsedData = parseApiResponse<T>(data);
+    console.log(`[${new Date().toISOString()}] 解析后的API响应数据:`, parsedData);
+    return parsedData;
   } catch (error) {
     console.error(`[${new Date().toISOString()}] API请求异常:`, error);
     throw error;
@@ -444,17 +440,14 @@ export const nodeApi = {
       // 处理不同的响应格式
       let answer = '';
       
-      // 如果响应是QA对象格式
-      if (data && typeof data.answer === 'string') {
-        answer = data.answer;
-      } 
-      // 如果响应是ApiResponse格式，且data字段包含answer
-      else if (data && data.data && typeof data.data.answer === 'string') {
-        answer = data.data.answer;
-      }
-      // 如果响应是完整的QA对象（没有包装在data字段中）
-      else if (data && typeof data.question === 'string' && typeof data.answer === 'string') {
-        answer = data.answer;
+      // 使用通用解析函数处理响应
+      const parsedData = parseApiResponse<any>(data);
+      
+      // 提取answer字段
+      if (parsedData && typeof parsedData.answer === 'string') {
+        answer = parsedData.answer;
+      } else if (parsedData && typeof parsedData.question === 'string' && typeof parsedData.answer === 'string') {
+        answer = parsedData.answer;
       }
       // 如果都不是，抛出错误
       else {

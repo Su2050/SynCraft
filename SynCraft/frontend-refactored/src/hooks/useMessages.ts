@@ -7,6 +7,7 @@ import db from '@/utils/db';
 import { useSession } from '@/store/sessionContext';
 import { useSessionTree } from '@/hooks/useSessionTree';
 import toast from 'react-hot-toast'; // 导入toast组件，如果项目中没有，需要安装
+import { parseApiResponse } from '@/utils/apiResponse';
 
 /**
  * 消息Hook，用于管理消息状态和发送消息
@@ -103,8 +104,8 @@ export function useMessages(sessionId: string) {
             const sessionResponse = await api.session.getById(sessionId);
             console.log(`[${new Date().toISOString()}] 获取会话详情:`, sessionResponse);
             
-            // API 既可能返回 ApiResponse<Session>（带 data 字段），也可能直接返回 Session 对象
-            const sessionData: any = (sessionResponse as any)?.data ?? sessionResponse;
+            // 使用通用解析函数处理响应
+            const sessionData = parseApiResponse<any>(sessionResponse);
 
             if (sessionData) {
               // 尝试从root_node_id或main_context获取根节点ID
@@ -135,10 +136,8 @@ export function useMessages(sessionId: string) {
             let mainContext;
             try {
               const contextsResponse = await api.context.getBySession(sessionId);
-              // getBySession 直接返回 Context[]，也可能返回 ApiResponse<Context[]>
-              const contextList: any[] = Array.isArray(contextsResponse)
-                ? contextsResponse
-                : (contextsResponse as any)?.data ?? [];
+              // 使用通用解析函数处理响应
+              const contextList = parseApiResponse<any[]>(contextsResponse);
 
               // 找到主聊天上下文（mode === 'chat'）
               mainContext = contextList.find(ctx => ctx.mode === 'chat');
@@ -172,8 +171,9 @@ export function useMessages(sessionId: string) {
                   context_id: mainContext.id
                 });
                 
-                // 检查API响应
-                const createdNodeId = (newNodeWithContextResponse as any)?.id ?? (newNodeWithContextResponse as any)?.data?.id;
+                // 检查API响应 - 使用parseApiResponse确保一致性
+                const parsedResponse = parseApiResponse<any>(newNodeWithContextResponse);
+                const createdNodeId = parsedResponse?.id;
                 if (createdNodeId) {
                   targetNodeId = createdNodeId;
                   console.log(`[${new Date().toISOString()}] 创建节点并更新上下文成功，节点ID:`, targetNodeId);
@@ -187,7 +187,7 @@ export function useMessages(sessionId: string) {
                       console.log(`[${new Date().toISOString()}] 验证上下文更新，尝试次数: ${4 - retryCount}`);
                       
                       const verifyContextResponse = await api.context.getById(mainContext.id);
-                      const verifyContext: any = (verifyContextResponse as any)?.data ?? verifyContextResponse;
+                      const verifyContext = parseApiResponse<any>(verifyContextResponse);
                       
                       if (verifyContext && verifyContext.active_node_id === targetNodeId) {
                         console.log(`[${new Date().toISOString()}] ✅ 验证更新成功，active_node_id已更新为: ${targetNodeId}`);
@@ -234,8 +234,9 @@ export function useMessages(sessionId: string) {
                   type: 'normal'
                 });
                 
-                // 检查API响应
-                const fallbackNodeId = (newNodeResponse as any)?.id ?? (newNodeResponse as any)?.data?.id;
+                // 检查API响应 - 使用parseApiResponse确保一致性
+                const parsedNodeResponse = parseApiResponse<any>(newNodeResponse);
+                const fallbackNodeId = parsedNodeResponse?.id;
                 if (fallbackNodeId) {
                   targetNodeId = fallbackNodeId;
                   console.log(`[${new Date().toISOString()}] 创建新节点成功，ID:`, targetNodeId);
@@ -253,7 +254,7 @@ export function useMessages(sessionId: string) {
                       
                       // 验证更新是否成功
                       const verifyContextResponse = await api.context.getById(mainContext.id);
-                      const verifyContext: any = (verifyContextResponse as any)?.data ?? verifyContextResponse;
+                      const verifyContext = parseApiResponse<any>(verifyContextResponse);
                       
                       if (verifyContext && verifyContext.active_node_id === targetNodeId) {
                         console.log(`[${new Date().toISOString()}] 验证更新成功，active_node_id已更新为: ${targetNodeId}`);
@@ -293,8 +294,9 @@ export function useMessages(sessionId: string) {
                 type: 'normal'
               });
               
-              // 检查API响应
-              const simpleNodeId = (newNodeResponse as any)?.id ?? (newNodeResponse as any)?.data?.id;
+              // 检查API响应 - 使用parseApiResponse确保一致性
+              const parsedSimpleResponse = parseApiResponse<any>(newNodeResponse);
+              const simpleNodeId = parsedSimpleResponse?.id;
               if (simpleNodeId) {
                 targetNodeId = simpleNodeId;
                 console.log(`[${new Date().toISOString()}] 创建新节点成功，ID:`, targetNodeId);
@@ -318,9 +320,24 @@ export function useMessages(sessionId: string) {
           // 直接调用askQuestion方法，它现在接受string | null类型的参数
           const response = await api.node.askQuestion(targetNodeId, content);
 
-          // 兼容两种格式的响应
-          const answerResp: any = (response as any)?.data ?? response;
-          answer = answerResp?.answer;
+          // 使用通用解析函数处理响应
+          const answerResp = parseApiResponse<any>(response);
+          
+          // 兼容不同的响应格式
+          if (answerResp && typeof answerResp.answer === 'string') {
+            answer = answerResp.answer;
+          } else if (answerResp && typeof answerResp.question === 'string' && typeof answerResp.answer === 'string') {
+            answer = answerResp.answer;
+          } else if (response && typeof (response as any).data?.answer === 'string') {
+            // 兼容原始响应格式
+            answer = (response as any).data.answer;
+          } else if (response && typeof (response as any).answer === 'string') {
+            // 直接从原始响应中获取
+            answer = (response as any).answer;
+          } else {
+            console.error('无法从响应中提取answer字段:', response, answerResp);
+            throw new Error('无法从响应中提取answer字段');
+          }
           if (typeof answer !== 'string' || answer.trim() === '') {
             console.error('API返回的answer不是有效字符串:', answer);
             throw new Error('AI回复内容为空');

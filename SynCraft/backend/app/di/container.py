@@ -69,11 +69,14 @@ def register_services(db_session: Optional[Session] = None) -> None:
     container.register(LLMServiceInterface, get_llm_service)
 
 # 服务依赖项
-def get_session_service() -> SessionService:
+from fastapi import Depends
+from app.database import get_session as get_db_session
+
+def get_session_service(db: Session = Depends(get_db_session)) -> SessionService:
     """
-    获取会话服务
+    获取会话服务（每次请求独立的 session）
     """
-    return container.resolve(SessionService)
+    return SessionService(db)
 
 def get_node_service() -> NodeService:
     """

@@ -82,139 +82,22 @@ export const useTreeStore = create<TreeState>((set, get) => ({
   load: () =>
     new Promise<void>(async (resolve) => {
       try {
-        // 获取当前活动会话ID
-        const activeSessionId = localStorage.getItem('activeSessionId') || 'default';
+        // 清空现有数据
+        set({ 
+          nodes: [], 
+          edges: []
+        });
         
-        if (activeSessionId && activeSessionId !== 'default') {
-          try {
-            // 使用仓储层获取会话树
-            const { nodes, edges } = await sessionRepository.getSessionTree(activeSessionId);
-            
-            // 初始化上下文
-            const initialActiveNodeId = nodes.length > 0 ? nodes[0].id : null;
-            useContextStore.getState().initializeContextState(initialActiveNodeId, activeSessionId);
-            
-            // 更新状态
-            set({ 
-              nodes, 
-              edges
-            });
-            
-            // 保存活动节点ID到localStorage，供API客户端使用
-            if (initialActiveNodeId) {
-              localStorage.setItem('activeNodeId', initialActiveNodeId);
-            }
-            
-            resolve();
-            return;
-          } catch (apiError) {
-            console.warn('从API获取会话树数据失败，回退到本地存储:', apiError);
-            // 回退到IndexedDB
-          }
-        }
+        // 清除IndexedDB中的数据
+        await idbSet('nodes', []);
+        await idbSet('edges', []);
         
-        // 如果API调用失败或没有活动会话ID，回退到原有逻辑
-        // 尝试从 IndexedDB 加载数据
-        const savedNodes = await idbGet('nodes') as Node[] | undefined;
-        const savedEdges = await idbGet('edges') as Edge[] | undefined;
-        
-        // 如果 IndexedDB 中没有数据，则创建根节点
-        if (!savedNodes || savedNodes.length === 0) {
-          // 只创建根节点
-          const nodes: Node[] = [ROOT_NODE];
-          
-          // 没有测试节点，所以没有边
-          const edges: Edge[] = [];
-          
-          // 保存到 IndexedDB
-          await idbSet('nodes', nodes);
-          await idbSet('edges', edges);
-          
-          // 初始化上下文
-          useContextStore.getState().initializeContextState('root', 'default');
-          
-          set({ 
-            nodes, 
-            edges
-          });
-        } else {
-          // 如果 IndexedDB 中有数据，则使用它
-          // 确保所有边都有正确的样式
-          const formattedEdges = (savedEdges || []).map(edge => ({
-            ...edge,
-            type: 'custom', // 使用自定义边类型
-            animated: true,
-            markerEnd: { type: MarkerType.ArrowClosed },
-            style: { stroke: '#3b82f6', strokeWidth: 2 }
-          }));
-          
-          // 检查是否有节点但没有边，如果是这种情况，可能需要重建边
-          if (savedNodes.length > 1 && (!savedEdges || savedEdges.length === 0)) {
-            console.log("检测到节点但没有边，尝试重建边...");
-            // 假设第一个节点是根节点，其他节点都连接到根节点
-            // 这是一个简单的修复方案，实际情况可能需要更复杂的逻辑
-            const newEdges: Edge[] = [];
-            const rootId = savedNodes[0].id;
-            
-            for (let i = 1; i < savedNodes.length; i++) {
-              const node = savedNodes[i];
-              newEdges.push({
-                id: `${rootId}-${node.id}`,
-                source: rootId,
-                target: node.id,
-                type: 'custom', // 使用自定义边类型
-                animated: true,
-                markerEnd: { type: MarkerType.ArrowClosed },
-                style: { stroke: '#3b82f6', strokeWidth: 2 }
-              });
-            }
-            
-            // 保存新创建的边
-            await idbSet('edges', newEdges);
-            
-            // 初始化上下文
-            const initialActiveNodeId = savedNodes.length > 0 ? savedNodes[0].id : null;
-            // 获取第一个节点的会话ID，如果没有则使用默认会话ID
-            const sessionId = savedNodes.length > 0 && savedNodes[0].data.sessionId ? savedNodes[0].data.sessionId : 'default';
-            useContextStore.getState().initializeContextState(initialActiveNodeId, sessionId);
-            
-            set({ 
-              nodes: savedNodes, 
-              edges: newEdges
-            });
-          } else {
-            // 初始化上下文
-            const initialActiveNodeId = savedNodes.length > 0 ? savedNodes[0].id : null;
-            // 获取第一个节点的会话ID，如果没有则使用默认会话ID
-            const sessionId = savedNodes.length > 0 && savedNodes[0].data.sessionId ? savedNodes[0].data.sessionId : 'default';
-            useContextStore.getState().initializeContextState(initialActiveNodeId, sessionId);
-            
-            set({ 
-              nodes: savedNodes, 
-              edges: formattedEdges
-            });
-          }
-        }
+        // 不再尝试加载会话树或创建根节点
+        // 用户需要点击创建会话按钮才会创建会话和根节点
         
         resolve();
       } catch (error) {
         console.error('Error initializing tree store:', error);
-        
-        // 出错时，创建根节点
-        const nodes: Node[] = [ROOT_NODE];
-        const edges: Edge[] = [];
-        
-        await idbSet('nodes', nodes);
-        await idbSet('edges', edges);
-        
-        // 初始化上下文
-        useContextStore.getState().initializeContextState('root', 'default');
-        
-        set({ 
-          nodes, 
-          edges
-        });
-        
         resolve();
       }
     }),

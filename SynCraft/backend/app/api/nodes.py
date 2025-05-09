@@ -25,6 +25,14 @@ class NodeCreate(BaseModel):
     summary_up_to_here: Optional[str] = None
     context_id: Optional[str] = None
 
+class NodeCreateWithContextUpdate(BaseModel):
+    parent_id: Optional[str] = None
+    session_id: str
+    template_key: Optional[str] = None
+    label: Optional[str] = None
+    type: str = "normal"
+    context_id: str  # 必须提供上下文ID
+
 class NodeResponse(BaseModel):
     id: str
     session_id: str
@@ -450,6 +458,70 @@ def get_node_children_api(
         child_nodes.append(child_info)
     
     return NodeChildrenResponse(items=child_nodes)
+
+@router.post("/nodes/with_context_update", response_model=NodeResponse)
+def create_node_with_context_update(
+    node_data: NodeCreateWithContextUpdate,
+    db: Session = Depends(get_session)
+):
+    """创建节点并更新上下文的活动节点，在一个事务中完成"""
+    # 使用NodeService和ContextService
+    node_service = NodeService(db)
+    context_service = ContextService(db)
+    
+    print(f"开始创建节点并更新上下文，session_id={node_data.session_id}, parent_id={node_data.parent_id}, context_id={node_data.context_id}")
+    
+    try:
+        # 开始事务
+        db.begin()
+        
+        # 创建节点（不提交）
+        node = node_service.create_node_without_commit(
+            session_id=node_data.session_id,
+            parent_id=node_data.parent_id,
+            template_key=node_data.template_key,
+            label=node_data.label,
+            type=node_data.type
+        )
+        
+        print(f"节点创建成功（未提交），id={node.id}")
+        
+        # 更新上下文的活动节点（不提交）
+        context = context_service.update_context_without_commit(
+            context_id=node_data.context_id,
+            active_node_id=node.id
+        )
+        
+        if not context:
+            # 如果上下文不存在，回滚事务并抛出异常
+            db.rollback()
+            raise HTTPException(status_code=404, detail=f"Context with id {node_data.context_id} not found")
+        
+        print(f"上下文更新成功（未提交），context_id={context.id}, active_node_id={context.active_node_id}")
+        
+        # 提交事务
+        db.commit()
+        db.refresh(node)
+        
+        print(f"事务提交成功，节点id={node.id}, 上下文active_node_id={context.active_node_id}")
+        
+        # 构建响应
+        response = NodeResponse(
+            id=node.id,
+            session_id=node.session_id,
+            template_key=node.template_key,
+            summary_up_to_here=node.summary_up_to_here,
+            created_at=node.created_at,
+            updated_at=node.updated_at,
+            parent_id=node.parent_id
+        )
+        
+        return response
+    except Exception as e:
+        # 回滚事务
+        db.rollback()
+        print(f"创建节点并更新上下文失败: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
 
 @router.put("/nodes/{node_id}", response_model=NodeResponse)
 def update_node(

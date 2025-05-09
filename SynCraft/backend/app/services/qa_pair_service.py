@@ -229,7 +229,11 @@ class QAPairService:
         
         # 调用LLM获取回答
         answer = self.llm_service.call_llm(prompt)
-        
+        if not answer or not isinstance(answer, str) or not answer.strip():
+            # 兜底：LLM异常时给出默认回复
+            answer = "AI暂时无法回答，请稍后再试。"
+            print(f"[QAPairService.ask_question] LLM返回内容为空，已用默认回复。prompt={prompt}")
+
         # 创建QA对和消息
         return self.create_qa_pair(node_id, question, answer)
     

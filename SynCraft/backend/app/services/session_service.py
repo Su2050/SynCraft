@@ -16,49 +16,8 @@ class SessionService:
     def create_session(self, name: str, user_id: str = "local") -> Dict[str, Any]:
         """创建一个新会话，包括根节点和主聊天上下文"""
         try:
-            # 使用事务包装整个创建过程，确保原子性
-            with self.db.begin() as transaction:
-                # 创建会话
-                session = SessionModel(
-                    name=name,
-                    user_id=user_id
-                )
-                self.db.add(session)
-                self.db.flush()  # 使用flush而不是commit，保持在同一事务中
-                
-                # 创建根节点
-                root_node = Node(
-                    id=generate(),
-                    session_id=session.id,
-                    template_key="root"
-                )
-                self.db.add(root_node)
-                self.db.flush()
-                
-                # 更新会话的根节点ID
-                session.root_node_id = root_node.id
-                self.db.add(session)
-                self.db.flush()
-                
-                # 创建主聊天上下文
-                context = Context(
-                    context_id=f"chat-{session.id}",
-                    mode="chat",
-                    session_id=session.id,
-                    context_root_node_id=root_node.id,
-                    active_node_id=root_node.id
-                )
-                self.db.add(context)
-                self.db.flush()
-                
-                # 创建上下文节点关系
-                context_node = ContextNode(
-                    context_id=context.id,
-                    node_id=root_node.id,
-                    relation_type="root"
-                )
-                self.db.add(context_node)
-                # 事务结束时会自动提交
+            # 直接执行创建逻辑，不使用事务嵌套
+            return self._create_session_internal(name, user_id)
         except Exception as e:
             # 记录错误并抛出异常
             # 在实际应用中，应该使用日志记录错误
@@ -66,6 +25,53 @@ class SessionService:
             # logger = logging.getLogger(__name__)
             # logger.error(f"创建会话失败: {str(e)}")
             raise ValueError(f"创建会话失败: {str(e)}")
+    
+    def _create_session_internal(self, name: str, user_id: str) -> Dict[str, Any]:
+        """内部方法，实际创建会话的逻辑"""
+        try:
+            # 创建会话
+            session = SessionModel(
+                name=name,
+                user_id=user_id
+            )
+            self.db.add(session)
+            
+            # 创建根节点
+            root_node = Node(
+                id=generate(),
+                session_id=session.id,
+                template_key="root"
+            )
+            self.db.add(root_node)
+            
+            # 更新会话的根节点ID
+            session.root_node_id = root_node.id
+            # 不需要再次add，因为session已经在session中被跟踪
+            
+            # 创建主聊天上下文
+            context = Context(
+                context_id=f"chat-{session.id}",
+                mode="chat",
+                session_id=session.id,
+                context_root_node_id=root_node.id,
+                active_node_id=root_node.id
+            )
+            self.db.add(context)
+            
+            # 创建上下文节点关系
+            context_node = ContextNode(
+                context_id=context.id,
+                node_id=root_node.id,
+                relation_type="root"
+            )
+            self.db.add(context_node)
+            
+            # 只在最后执行一次flush
+            self.db.flush()
+            self.db.commit()
+        except Exception as e:
+            # 记录错误并抛出异常
+            raise ValueError(f"创建会话内部错误: {str(e)}")
         
         # 返回会话信息
         return {

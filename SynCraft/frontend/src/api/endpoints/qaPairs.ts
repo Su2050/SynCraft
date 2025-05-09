@@ -17,7 +17,7 @@ export const qaPairEndpoints = {
    * @returns QA对详情
    */
   async getQAPair(id: string): Promise<ApiQAPairDetailResponse> {
-    return apiClient.get<ApiQAPairDetailResponse>(`/qa_pairs/${id}`);
+    return apiClient.get<ApiQAPairDetailResponse>(`/api/v1/qa_pairs/${id}`);
   },
   
   /**
@@ -32,7 +32,7 @@ export const qaPairEndpoints = {
     status?: string | null;
     rating?: number | null;
   }): Promise<ApiQAPairResponse> {
-    return apiClient.put<ApiQAPairResponse>(`/qa_pairs/${id}`, data);
+    return apiClient.put<ApiQAPairResponse>(`/api/v1/qa_pairs/${id}`, data);
   },
   
   /**
@@ -41,7 +41,7 @@ export const qaPairEndpoints = {
    * @returns 成功响应
    */
   async deleteQAPair(id: string): Promise<ApiSuccessResponse> {
-    return apiClient.delete<ApiSuccessResponse>(`/qa_pairs/${id}`);
+    return apiClient.delete<ApiSuccessResponse>(`/api/v1/qa_pairs/${id}`);
   },
   
   /**
@@ -58,7 +58,7 @@ export const qaPairEndpoints = {
     limit: number = 10,
     offset: number = 0
   ): Promise<{ total: number; items: ApiQAPairDetailResponse[] }> {
-    let url = `/search?q=${encodeURIComponent(query)}&limit=${limit}&offset=${offset}`;
+    let url = `/api/v1/search?q=${encodeURIComponent(query)}&limit=${limit}&offset=${offset}`;
     if (sessionId) {
       url += `&session_id=${sessionId}`;
     }

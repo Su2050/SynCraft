@@ -15,13 +15,27 @@ init_db()
 from app.di.container import register_services
 register_services()
 
+# 自动初始化默认会话（直接在全局启动流程执行，确保数据库有数据）
+from sqlmodel import Session as SQLSession, select
+from app.database import engine
+from app.models.session import Session as SessionModel
+from app.services.session_service import SessionService
+
+# 再次确保表已创建
+init_db()
+with SQLSession(engine) as db:
+    if db.exec(select(SessionModel)).first() is None:
+        service = SessionService(db)
+        service.create_session(name="默认会话", user_id="system")
+        print("已自动初始化默认会话")
+
 # 创建FastAPI应用
 app = FastAPI(title="SynCraft API")
 
 # 配置CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:3000"],  # 允许前端开发服务器的来源
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

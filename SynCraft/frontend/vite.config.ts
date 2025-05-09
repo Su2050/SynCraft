@@ -23,6 +23,8 @@ export default defineConfig({
       '/nodes': { target: BACKEND, changeOrigin: true },
       '/cards': { target: BACKEND, changeOrigin: true },
       '/ask':   { target: BACKEND, changeOrigin: true },
+      '/api/v1': { target: BACKEND, changeOrigin: true },
+      '/sessions': { target: BACKEND, changeOrigin: true },
     },
   },
 })

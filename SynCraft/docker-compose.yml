@@ -3,13 +3,13 @@ services:
     image: node:18-alpine
     working_dir: /app
     volumes:
-      - ./frontend:/app
+      - ./frontend-refactored:/app
       - /app/node_modules
     command: sh -c "npm install --legacy-peer-deps && npm run dev -- --host"
     ports:
-      - "3000:5173"
-    environment:                  # ← 新增 block
-      - VITE_BACKEND=http://backend:8000
+      - "3000:3000"
+    environment:
+      - VITE_BACKEND=http://localhost:8000
     depends_on:
       - backend
 
@@ -17,9 +17,10 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
-    # 只挂代码，便于热更新；依赖已打进镜像
+    # 挂载代码和配置文件
     volumes:
       - ./backend/app:/app/app
+      - ./backend/config.json:/app/config.json
     ports:
       - "8000:8000"
     env_file:

@@ -107,32 +107,68 @@ class ContextService:
             "nodes": nodes_data
         }
     
-    def update_context(self, context_id: str, active_node_id: Optional[str] = None) -> Optional[Context]:
-        """更新上下文信息"""
+    def update_context_without_commit(self, context_id: str, active_node_id: Optional[str] = None) -> Optional[Context]:
+        """更新上下文信息但不提交事务，用于在更大的事务中使用"""
+        print(f"开始更新上下文（不提交），context_id: {context_id}, active_node_id: {active_node_id}")
+        
         context = self.db.get(Context, context_id)
         if not context:
+            print(f"上下文不存在，context_id: {context_id}")
             return None
+        
+        print(f"当前上下文信息: id={context.id}, context_id={context.context_id}, mode={context.mode}, session_id={context.session_id}")
+        print(f"当前active_node_id: {context.active_node_id}, 将更新为: {active_node_id}")
         
         # 更新活动节点
         if active_node_id:
             # 验证节点存在
             node = self.db.get(Node, active_node_id)
             if not node:
-                raise ValueError(f"Node with id {active_node_id} not found")
+                error_msg = f"Node with id {active_node_id} not found"
+                print(f"错误: {error_msg}")
+                raise ValueError(error_msg)
+            
+            print(f"节点信息: id={node.id}, session_id={node.session_id}, parent_id={node.parent_id}")
             
             # 验证节点属于同一会话
             if node.session_id != context.session_id:
-                raise ValueError("Node does not belong to the context's session")
+                error_msg = "Node does not belong to the context's session"
+                print(f"错误: {error_msg}, node.session_id={node.session_id}, context.session_id={context.session_id}")
+                raise ValueError(error_msg)
             
+            # 保存旧值，用于日志
+            old_active_node_id = context.active_node_id
+            
+            # 更新活动节点
             context.active_node_id = active_node_id
+            print(f"更新活动节点: {old_active_node_id} -> {active_node_id}")
         
         context.updated_at = datetime.utcnow()
         
+        # 添加到会话但不提交
         self.db.add(context)
-        self.db.commit()
-        self.db.refresh(context)
+        self.db.flush()  # 刷新会话，但不提交
         
+        print(f"上下文更新成功（未提交），当前active_node_id: {context.active_node_id}")
         return context
+    
+    def update_context(self, context_id: str, active_node_id: Optional[str] = None) -> Optional[Context]:
+        """更新上下文信息"""
+        # 使用不提交版本的方法更新上下文
+        context = self.update_context_without_commit(context_id, active_node_id)
+        if not context:
+            return None
+        
+        # 提交事务
+        try:
+            self.db.commit()
+            self.db.refresh(context)
+            print(f"上下文更新成功（已提交），当前active_node_id: {context.active_node_id}")
+            return context
+        except Exception as e:
+            print(f"上下文更新失败: {e}")
+            self.db.rollback()
+            raise
     
     def delete_context(self, context_id: str) -> bool:
         """删除上下文及其关联的上下文节点关系"""

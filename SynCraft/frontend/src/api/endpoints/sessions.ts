@@ -18,7 +18,7 @@ export const sessionEndpoints = {
    * @returns 会话列表响应
    */
   async listSessions(userId: string = 'local'): Promise<ApiSessionListResponse> {
-    return apiClient.get<ApiSessionListResponse>(`/sessions?user_id=${userId}`);
+    return apiClient.get<ApiSessionListResponse>(`/api/v1/sessions?user_id=${userId}`);
   },
   
   /**
@@ -28,7 +28,7 @@ export const sessionEndpoints = {
    * @returns 创建的会话
    */
   async createSession(name: string, userId: string = 'local'): Promise<ApiSession> {
-    return apiClient.post<ApiSession>('/sessions', { name, user_id: userId });
+    return apiClient.post<ApiSession>('/api/v1/sessions', { name, user_id: userId });
   },
   
   /**
@@ -37,7 +37,7 @@ export const sessionEndpoints = {
    * @returns 会话详情
    */
   async getSession(id: string): Promise<ApiSessionDetailResponse> {
-    return apiClient.get<ApiSessionDetailResponse>(`/sessions/${id}`);
+    return apiClient.get<ApiSessionDetailResponse>(`/api/v1/sessions/${id}`);
   },
   
   /**
@@ -47,7 +47,7 @@ export const sessionEndpoints = {
    * @returns 更新后的会话
    */
   async updateSession(id: string, name: string): Promise<ApiSession> {
-    return apiClient.put<ApiSession>(`/sessions/${id}`, { name });
+    return apiClient.put<ApiSession>(`/api/v1/sessions/${id}`, { name });
   },
   
   /**
@@ -56,7 +56,7 @@ export const sessionEndpoints = {
    * @returns 成功响应
    */
   async deleteSession(id: string): Promise<ApiSuccessResponse> {
-    return apiClient.delete<ApiSuccessResponse>(`/sessions/${id}`);
+    return apiClient.delete<ApiSuccessResponse>(`/api/v1/sessions/${id}`);
   },
   
   /**
@@ -66,7 +66,7 @@ export const sessionEndpoints = {
    * @returns 会话树数据
    */
   async getSessionTree(id: string, includeQA: boolean = false): Promise<{nodes: any[], edges: any[]}> {
-    return apiClient.get<{nodes: any[], edges: any[]}>(`/sessions/${id}/tree?include_qa=${includeQA}`);
+    return apiClient.get<{nodes: any[], edges: any[]}>(`/api/v1/sessions/${id}/tree?include_qa=${includeQA}`);
   },
   
   /**
@@ -75,6 +75,6 @@ export const sessionEndpoints = {
    * @returns 主聊天上下文
    */
   async getMainContext(id: string): Promise<any> {
-    return apiClient.get<any>(`/sessions/${id}/main_context`);
+    return apiClient.get<any>(`/api/v1/sessions/${id}/main_context`);
   }
 };

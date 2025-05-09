@@ -38,19 +38,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       // 使用仓储层获取会话列表
       const savedSessions = await sessionRepository.listSessions();
       
-      // 如果没有会话，创建一个默认会话
-      if (savedSessions.length === 0) {
-        const defaultSession = await sessionRepository.createSession('默认会话');
-        
-        set({ 
-          sessions: [defaultSession],
-          activeSessionId: defaultSession.id
-        });
-        
-        // 保存活动会话ID到localStorage，供API客户端使用
-        localStorage.setItem('activeSessionId', defaultSession.id);
-      } else {
-        const activeSessionId = savedSessions.length > 0 ? savedSessions[0].id : null;
+      // 不再自动创建默认会话，只设置已有的会话
+      if (savedSessions.length > 0) {
+        const activeSessionId = savedSessions[0].id;
         
         set({ 
           sessions: savedSessions,
@@ -58,15 +48,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         });
         
         // 保存活动会话ID到localStorage，供API客户端使用
-        if (activeSessionId) {
-          localStorage.setItem('activeSessionId', activeSessionId);
-        }
-      }
-      
-      // 如果有会话，设置活动节点为第一个会话的根节点，使用会话特定的主聊天上下文ID
-      const activeSessionId = get().activeSessionId;
-      if (activeSessionId) {
-        const activeSession = get().sessions.find(s => s.id === activeSessionId);
+        localStorage.setItem('activeSessionId', activeSessionId);
+        
+        // 如果有会话，设置活动节点为第一个会话的根节点，使用会话特定的主聊天上下文ID
+        const activeSession = savedSessions[0];
         if (activeSession) {
           // 创建会话特定的主聊天上下文ID
           const mainContextId = useContextStore.getState().createContextId('chat', null, activeSession.id);
@@ -76,6 +61,16 @@ export const useSessionStore = create<SessionState>((set, get) => ({
           const { nodes, edges } = await sessionRepository.getSessionTree(activeSessionId);
           useTreeStore.getState().setAll(nodes, edges);
         }
+      } else {
+        // 如果没有会话，设置空的会话列表和null的活动会话ID
+        set({ 
+          sessions: [],
+          activeSessionId: null
+        });
+        
+        // 清除localStorage中的会话ID和节点ID
+        localStorage.removeItem('activeSessionId');
+        localStorage.removeItem('activeNodeId');
       }
     } catch (error) {
       console.error('加载会话数据失败:', error);

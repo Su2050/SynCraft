@@ -454,6 +454,41 @@ export class SessionRepository implements ISessionRepository {
       const nodes = (await idbGet(`nodes-${id}`)) as Node[] || [];
       const edges = (await idbGet(`edges-${id}`)) as Edge[] || [];
       
+      // 如果本地存储中也没有数据，返回一个空的树结构
+      if (nodes.length === 0) {
+        console.warn(`本地存储中没有会话 ${id} 的树数据，返回空树结构`);
+        
+        // 检查会话是否存在
+        try {
+          const sessions = (await idbGet('sessions')) as Session[] || [];
+          const session = sessions.find(s => s.id === id);
+          
+          // 如果会话存在，创建一个根节点
+          if (session && session.rootNodeId) {
+            const rootNode: Node = {
+              id: session.rootNodeId,
+              position: { x: 150, y: 150 },
+              data: { 
+                label: '根节点',
+                answer: '',
+                sessionId: id
+              },
+              type: 'root',
+              sourcePosition: Position.Bottom,
+              targetPosition: Position.Top,
+            };
+            
+            // 缓存到IndexedDB
+            await idbSet(`nodes-${id}`, [rootNode]);
+            await idbSet(`edges-${id}`, []);
+            
+            return { nodes: [rootNode], edges: [] };
+          }
+        } catch (sessionError) {
+          console.warn('检查会话失败:', sessionError);
+        }
+      }
+      
       return { nodes, edges };
     }
   }

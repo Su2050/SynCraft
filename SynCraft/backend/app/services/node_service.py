@@ -13,8 +13,10 @@ class NodeService:
     def __init__(self, db: Session):
         self.db = db
     
-    def create_node(self, session_id: str, parent_id: Optional[str] = None, template_key: Optional[str] = None) -> Node:
-        """创建一个新节点"""
+    def create_node_without_commit(self, session_id: str, parent_id: Optional[str] = None, template_key: Optional[str] = None, label: Optional[str] = None, type: str = "normal") -> Node:
+        """创建一个新节点但不提交事务，用于在更大的事务中使用"""
+        print(f"创建节点（不提交）: session_id={session_id}, parent_id={parent_id}, template_key={template_key}, label={label}, type={type}")
+        
         # 验证会话存在
         session = self.db.get(SessionModel, session_id)
         if not session:
@@ -35,11 +37,15 @@ class NodeService:
             id=generate(),
             parent_id=parent_id,
             session_id=session_id,
-            template_key=template_key
+            template_key=template_key,
+            label=label,
+            type=type
         )
         self.db.add(node)
-        self.db.commit()
-        self.db.refresh(node)
+        # 注意：这里不调用db.commit()
+        self.db.flush()  # 刷新会话，获取生成的ID
+        
+        print(f"节点创建成功（未提交）: id={node.id}")
         
         # 如果有父节点，创建边
         if parent_id:
@@ -49,9 +55,26 @@ class NodeService:
                 session_id=session_id
             )
             self.db.add(edge)
-            self.db.commit()
+            # 注意：这里不调用db.commit()
+            print(f"边创建成功（未提交）: source={parent_id}, target={node.id}")
         
         return node
+    
+    def create_node(self, session_id: str, parent_id: Optional[str] = None, template_key: Optional[str] = None, label: Optional[str] = None, type: str = "normal") -> Node:
+        """创建一个新节点"""
+        # 使用不提交版本的方法创建节点
+        node = self.create_node_without_commit(session_id, parent_id, template_key, label, type)
+        
+        # 提交事务
+        try:
+            self.db.commit()
+            self.db.refresh(node)
+            print(f"节点创建成功（已提交）: id={node.id}")
+            return node
+        except Exception as e:
+            self.db.rollback()
+            print(f"节点创建失败: {e}")
+            raise
     
     def get_node(self, node_id: str) -> Optional[Node]:
         """获取节点详情"""

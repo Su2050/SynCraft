@@ -20,7 +20,7 @@ export const nodeEndpoints = {
    * @returns 创建的节点
    */
   async createNode(data: ApiNodeCreate): Promise<ApiNode> {
-    return apiClient.post<ApiNode>('/nodes', data);
+    return apiClient.post<ApiNode>('/api/v1/nodes', data);
   },
   
   /**
@@ -38,7 +38,7 @@ export const nodeEndpoints = {
     includeQA: boolean = true
   ): Promise<ApiNodeResponse> {
     return apiClient.get<ApiNodeResponse>(
-      `/nodes/${id}?include_children=${includeChildren}&children_depth=${childrenDepth}&include_qa=${includeQA}`
+      `/api/v1/nodes/${id}?include_children=${includeChildren}&children_depth=${childrenDepth}&include_qa=${includeQA}`
     );
   },
   
@@ -48,7 +48,7 @@ export const nodeEndpoints = {
    * @returns QA对搜索响应
    */
   async getNodeQAPairs(id: string): Promise<ApiSearchResponse> {
-    return apiClient.get<ApiSearchResponse>(`/nodes/${id}/qa_pairs`);
+    return apiClient.get<ApiSearchResponse>(`/api/v1/nodes/${id}/qa_pairs`);
   },
   
   /**
@@ -58,7 +58,7 @@ export const nodeEndpoints = {
    * @returns QA对响应
    */
   async askQuestion(id: string, question: string): Promise<ApiQAPairResponse> {
-    return apiClient.post<ApiQAPairResponse>(`/nodes/${id}/ask`, { question });
+    return apiClient.post<ApiQAPairResponse>(`/api/v1/nodes/${id}/ask`, { question });
   },
   
   /**
@@ -68,7 +68,7 @@ export const nodeEndpoints = {
    * @returns 子节点响应
    */
   async getNodeChildren(id: string, includeQA: boolean = true): Promise<ApiNodeChildrenResponse> {
-    return apiClient.get<ApiNodeChildrenResponse>(`/nodes/${id}/children?include_qa=${includeQA}`);
+    return apiClient.get<ApiNodeChildrenResponse>(`/api/v1/nodes/${id}/children?include_qa=${includeQA}`);
   },
   
   /**
@@ -78,6 +78,6 @@ export const nodeEndpoints = {
    * @returns 更新后的节点
    */
   async updateNode(id: string, data: Partial<ApiNodeCreate>): Promise<ApiNode> {
-    return apiClient.put<ApiNode>(`/nodes/${id}`, data);
+    return apiClient.put<ApiNode>(`/api/v1/nodes/${id}`, data);
   }
 };

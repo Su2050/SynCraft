@@ -6,6 +6,7 @@ import { Position } from 'react-flow-renderer';
 import { NodeData } from '../types/node';
 import { useLogger } from './useLogger';
 import { useErrorService } from './useErrorService';
+import { api } from '../api';
 
 /**
  * 节点服务Hook，提供节点相关的操作
@@ -46,26 +47,32 @@ export function useNodeService() {
       // 从上下文中获取rootNodeId
       let rootNodeId: string;
       
-      if (contextId === 'chat') {
-        // 如果是聊天上下文，使用当前上下文的nodeId
-        if (currentContext.nodeId) {
-          rootNodeId = currentContext.nodeId;
-        } else {
-          // 如果currentContext.nodeId为null，检查是否有节点
-          if (nodes.length > 0) {
-            // 使用第一个节点的ID
-            rootNodeId = nodes[0].id;
-          } else {
-            // 如果没有节点，生成一个新的唯一ID
-            rootNodeId = `root-${Date.now()}`;
-          }
-        }
+      // 从contextId中提取会话ID
+      const sessionId = contextId.split('-')[1] || 'default';
+      
+      // 检查是否有与会话关联的根节点
+      const sessionRootNode = nodes.find(node => 
+        node.type === 'root' && 
+        node.data && 
+        node.data.sessionId === sessionId
+      );
+      
+      if (sessionRootNode) {
+        // 如果找到会话的根节点，使用它的ID
+        rootNodeId = sessionRootNode.id;
+        logger.debug(`使用会话 ${sessionId} 的现有根节点: ${rootNodeId}`);
+      } else if (contextId.startsWith('chat-')) {
+        // 如果是聊天上下文但没有找到会话根节点，创建一个新的根节点ID
+        rootNodeId = `root-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+        logger.debug(`为会话 ${sessionId} 创建新的根节点ID: ${rootNodeId}`);
       } else if (contextId.startsWith('deepdive-')) {
         // 如果是深挖上下文，从contextId中提取nodeId
         rootNodeId = contextId.split('-')[1];
+        logger.debug(`从深挖上下文ID提取根节点ID: ${rootNodeId}`);
       } else {
         // 其他情况，生成一个新的唯一ID
         rootNodeId = `root-${Date.now()}`;
+        logger.debug(`生成新的根节点ID: ${rootNodeId}`);
       }
       
       logger.debug(`创建根节点 - 根节点ID: ${rootNodeId}`);
@@ -74,21 +81,63 @@ export function useNodeService() {
       const rootNodeExists = nodes.some(node => node.id === rootNodeId);
       
       if (!rootNodeExists) {
-        // 如果根节点不存在，创建一个新的根节点
-        const newRootNode = {
-          id: rootNodeId,
-          position: { x: 120, y: 80 },
-          data: { 
-            label: question.length > 20 ? question.substring(0, 20) + '...' : question
-          },
-          type: 'root',
-          sourcePosition: Position.Bottom,
-          targetPosition: Position.Top,
-        };
-        
-        setAll([newRootNode], []);
-        
-        logger.info(`创建根节点成功 - ID: ${rootNodeId}`);
+        try {
+          // 获取当前上下文ID
+          const currentContextId = contextId || `chat-${sessionId}`;
+          
+          // 调用API创建节点
+          const apiNode = await api.nodes.createNode({
+            session_id: sessionId,
+            parent_id: null,
+            template_key: null,
+            summary_up_to_here: question.substring(0, 100),
+            context_id: currentContextId
+          });
+          
+          // 使用API返回的节点ID
+          rootNodeId = apiNode.id;
+          
+          logger.info(`通过API创建根节点成功 - ID: ${rootNodeId}`);
+          
+          // 在前端创建对应的节点对象
+          const newRootNode = {
+            id: rootNodeId,
+            position: { x: 120, y: 80 },
+            data: { 
+              label: question.length > 20 ? question.substring(0, 20) + '...' : question,
+              sessionId: sessionId // 添加会话ID到节点数据中
+            },
+            type: 'root',
+            sourcePosition: Position.Bottom,
+            targetPosition: Position.Top,
+          };
+          
+          setAll([newRootNode], []);
+          
+          // 保存到localStorage，以便其他组件可以使用
+          localStorage.setItem('currentContextId', currentContextId);
+          
+          logger.info(`创建根节点成功 - ID: ${rootNodeId}`);
+        } catch (apiError) {
+          logger.error(`通过API创建根节点失败:`, apiError);
+          
+          // 如果API调用失败，回退到仅在前端创建节点
+          const newRootNode = {
+            id: rootNodeId,
+            position: { x: 120, y: 80 },
+            data: { 
+              label: question.length > 20 ? question.substring(0, 20) + '...' : question,
+              sessionId: sessionId // 添加会话ID到节点数据中
+            },
+            type: 'root',
+            sourcePosition: Position.Bottom,
+            targetPosition: Position.Top,
+          };
+          
+          setAll([newRootNode], []);
+          
+          logger.info(`仅在前端创建根节点 - ID: ${rootNodeId}`);
+        }
       } else {
         // 如果根节点已存在，更新其标签
         const updatedNodes = nodes.map(n => {
@@ -97,7 +146,8 @@ export function useNodeService() {
               ...n,
               data: {
                 ...n.data,
-                label: question.length > 20 ? question.substring(0, 20) + '...' : question
+                label: question.length > 20 ? question.substring(0, 20) + '...' : question,
+                sessionId: sessionId // 确保会话ID被更新
               }
             };
           }
@@ -150,15 +200,52 @@ export function useNodeService() {
         throw new Error(`父节点 ${parentId} 不存在`);
       }
       
-      // 创建子节点
-      const newNodeId = await addChild(parentId, question);
+      // 从contextId中提取会话ID
+      const sessionId = contextId.split('-')[1] || 'default';
       
-      // 设置活动节点
-      setActive(newNodeId, 'NodeService-createChildNode', contextId);
+      // 获取当前上下文ID
+      const currentContextId = contextId || `chat-${sessionId}`;
       
-      logger.info(`创建子节点成功 - ID: ${newNodeId}`);
-      
-      return newNodeId;
+      try {
+        // 调用API创建节点
+        const apiNode = await api.nodes.createNode({
+          session_id: sessionId,
+          parent_id: parentId,
+          template_key: null,
+          summary_up_to_here: question.substring(0, 100),
+          context_id: currentContextId
+        });
+        
+        // 使用API返回的节点ID
+        const newNodeId = apiNode.id;
+        
+        logger.info(`通过API创建子节点成功 - ID: ${newNodeId}`);
+        
+        // 创建子节点
+        await addChild(parentId, question, newNodeId);
+        
+        // 设置活动节点
+        setActive(newNodeId, 'NodeService-createChildNode', contextId);
+        
+        // 保存到localStorage，以便其他组件可以使用
+        localStorage.setItem('currentContextId', currentContextId);
+        
+        logger.info(`创建子节点成功 - ID: ${newNodeId}`);
+        
+        return newNodeId;
+      } catch (apiError) {
+        logger.error(`通过API创建子节点失败:`, apiError);
+        
+        // 如果API调用失败，回退到仅在前端创建节点
+        const newNodeId = await addChild(parentId, question);
+        
+        // 设置活动节点
+        setActive(newNodeId, 'NodeService-createChildNode-fallback', contextId);
+        
+        logger.info(`仅在前端创建子节点 - ID: ${newNodeId}`);
+        
+        return newNodeId;
+      }
     } catch (error) {
       const friendlyMessage = handleError(error as Error, { 
         operation: 'createChildNode', 
@@ -201,15 +288,52 @@ export function useNodeService() {
       // 获取原始节点的上下文
       const originalContext = originalNode.data?.originalContext || originalNode.data?.label || '';
       
-      // 创建分叉节点
-      const newNodeId = await addChild(originalNodeId, question, undefined, originalContext);
+      // 从contextId中提取会话ID
+      const sessionId = contextId.split('-')[1] || 'default';
       
-      // 设置活动节点
-      setActive(newNodeId, 'NodeService-createForkNode', contextId);
+      // 获取当前上下文ID
+      const currentContextId = contextId || `chat-${sessionId}`;
       
-      logger.info(`创建分叉节点成功 - ID: ${newNodeId}`);
-      
-      return newNodeId;
+      try {
+        // 调用API创建节点
+        const apiNode = await api.nodes.createNode({
+          session_id: sessionId,
+          parent_id: originalNodeId,
+          template_key: null,
+          summary_up_to_here: question.substring(0, 100),
+          context_id: currentContextId
+        });
+        
+        // 使用API返回的节点ID
+        const newNodeId = apiNode.id;
+        
+        logger.info(`通过API创建分叉节点成功 - ID: ${newNodeId}`);
+        
+        // 创建分叉节点
+        await addChild(originalNodeId, question, newNodeId, originalContext);
+        
+        // 设置活动节点
+        setActive(newNodeId, 'NodeService-createForkNode', contextId);
+        
+        // 保存到localStorage，以便其他组件可以使用
+        localStorage.setItem('currentContextId', currentContextId);
+        
+        logger.info(`创建分叉节点成功 - ID: ${newNodeId}`);
+        
+        return newNodeId;
+      } catch (apiError) {
+        logger.error(`通过API创建分叉节点失败:`, apiError);
+        
+        // 如果API调用失败，回退到仅在前端创建节点
+        const newNodeId = await addChild(originalNodeId, question, undefined, originalContext);
+        
+        // 设置活动节点
+        setActive(newNodeId, 'NodeService-createForkNode-fallback', contextId);
+        
+        logger.info(`仅在前端创建分叉节点 - ID: ${newNodeId}`);
+        
+        return newNodeId;
+      }
     } catch (error) {
       const friendlyMessage = handleError(error as Error, { 
         operation: 'createForkNode', 

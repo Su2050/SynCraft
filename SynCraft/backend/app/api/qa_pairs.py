@@ -11,6 +11,7 @@ from app.models.qapair import QAPair
 from app.models.message import Message
 from app.services.qa_pair_service import QAPairService
 from app.services.node_service import NodeService
+from app.services.context_service import ContextService
 
 router = APIRouter()
 
@@ -179,6 +180,7 @@ def create_qa_pair(
     # 使用QAPairService创建QA对
     qa_pair_service = QAPairService(db)
     node_service = NodeService(db)
+    context_service = ContextService(db)
     
     # 检查节点是否存在
     node = node_service.get_node(qa_pair_data.node_id)
@@ -192,6 +194,29 @@ def create_qa_pair(
             question=qa_pair_data.question,
             answer=qa_pair_data.answer
         )
+        
+        # 更新上下文的活动节点
+        try:
+            # 获取会话的主上下文（聊天模式的上下文）
+            from sqlmodel import select
+            from app.models.context import Context
+            
+            # 构建上下文ID
+            context_id = f"chat-{node.session_id}"
+            
+            # 查询上下文
+            query = select(Context).where(Context.context_id == context_id)
+            context = db.exec(query).first()
+            
+            if context:
+                print(f"更新上下文活动节点，上下文ID: {context.id}, 节点ID: {qa_pair_data.node_id}")
+                # 更新活动节点
+                context_service.update_context(context.id, qa_pair_data.node_id)
+            else:
+                print(f"未找到会话 {node.session_id} 的主上下文")
+        except Exception as e:
+            # 记录错误但不中断流程
+            print(f"更新上下文活动节点失败: {e}")
         
         # 提取问题和回答
         question = None

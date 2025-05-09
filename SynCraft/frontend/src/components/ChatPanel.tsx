@@ -1,6 +1,6 @@
 // frontend/src/components/ChatPanel.tsx
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { useTreeStore } from '../store/treeStore'
 import { useSideTabStore } from '../store/tabStore'
@@ -8,7 +8,7 @@ import { useSessionStore, Session } from '../store/sessionStore' // 引入会话
 import Conversation from "./Conversation" // 引入 Conversation 组件
 import { useMsgStore } from "../store/messageStore"; // 引入消息存储
 import { set as idbSet } from 'idb-keyval'; // 引入 idbSet 函数
-import { useContextStore, MAIN_CHAT_CONTEXT_ID } from '../store/contextStore'; // 导入上下文管理相关的内容
+import { useContextStore } from '../store/contextStore';
 import { useChatLogic } from '../hooks/useChatLogic'; // 导入useChatLogic Hook
 
 export default function ChatPanel() {
@@ -38,6 +38,12 @@ export default function ChatPanel() {
   /* 获取当前活动会话 */
   const activeSession = sessions.find(s => s.id === activeSessionId) || sessions[0] || { name: '默认会话', rootNodeId: 'root' };
 
+  // 为当前会话生成专属 chat contextId
+  const { createContextId } = useContextStore();
+  const chatContextId = useMemo(() => {
+    return createContextId('chat', null, activeSession?.id || 'default');
+  }, [createContextId, activeSession?.id]);
+
   /* 使用useChatLogic Hook */
   const {
     inputText,
@@ -50,7 +56,7 @@ export default function ChatPanel() {
   } = useChatLogic({
     mode: 'chat',
     rootNodeId: activeSession?.rootNodeId || 'root',
-    contextId: MAIN_CHAT_CONTEXT_ID
+    contextId: chatContextId
   });
 
   /* 使用 useEffect 处理节点选择逻辑 - 只在初始加载和会话切换时执行 */
@@ -94,18 +100,6 @@ export default function ChatPanel() {
     }
   }, [activeSessionId, activeSession, setActiveNode, nodes]);
 
-  /* 获取当前选中节点或根节点 */
-  let currentNode = nodes.find(n => n.id === chatActiveNodeId);
-  
-  // 如果没有选中节点或找不到当前节点，显示加载提示
-  if (!currentNode) {
-    return (
-      <div className="h-full flex items-center justify-center text-gray-400">
-        正在初始化对话...
-      </div>
-    );
-  }
-
   /* 创建新会话 */
   const handleCreateSession = async () => {
     try {
@@ -117,6 +111,65 @@ export default function ChatPanel() {
       console.error("创建会话失败:", error);
       alert("创建会话失败");
     }
+  }
+
+  /* 获取当前选中节点或根节点 */
+  let currentNode = nodes.find(n => n.id === chatActiveNodeId);
+  
+  // 如果没有会话，显示创建会话按钮
+  if (sessions.length === 0) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center">
+        <div className="text-xl text-gray-600 mb-6">没有可用的会话</div>
+        <button 
+          onClick={() => setIsCreatingSession(true)}
+          className="bg-blue-500 text-white px-6 py-3 rounded-lg text-lg font-bold hover:bg-blue-600 transition-colors"
+          style={{ border: '2px solid #3b82f6' }}
+        >
+          创建新会话
+        </button>
+        
+        {/* 创建会话对话框 */}
+        {isCreatingSession && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg p-6 w-96 max-w-full">
+              <h3 className="text-lg font-medium mb-4">创建新会话</h3>
+              <input
+                type="text"
+                value={newSessionName}
+                onChange={(e) => setNewSessionName(e.target.value)}
+                placeholder="会话名称"
+                className="w-full border rounded px-3 py-2 mb-4"
+                autoFocus
+              />
+              <div className="flex justify-end space-x-2">
+                <button
+                  onClick={() => setIsCreatingSession(false)}
+                  className="px-4 py-2 border rounded hover:bg-gray-50"
+                >
+                  取消
+                </button>
+                <button
+                  onClick={handleCreateSession}
+                  className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                >
+                  创建
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+  
+  // 如果没有选中节点或找不到当前节点，显示加载提示
+  if (!currentNode) {
+    return (
+      <div className="h-full flex items-center justify-center text-gray-400">
+        正在初始化对话...
+      </div>
+    );
   }
   
   /* 重命名会话 */
@@ -308,7 +361,7 @@ export default function ChatPanel() {
       <div className="flex-1 overflow-auto p-4 space-y-4">
         {/* 调试信息 */}
         <div className="bg-yellow-50 p-2 mb-4 rounded text-xs">
-          <div><strong>ChatPanel - 上下文ID:</strong> {MAIN_CHAT_CONTEXT_ID}</div>
+          <div><strong>ChatPanel - 上下文ID:</strong> {chatContextId}</div>
           <div><strong>ChatPanel - 当前活动节点ID:</strong> {chatActiveNodeId || '无'}</div>
           <div><strong>ChatPanel - 当前活动节点内容:</strong> {
             (() => {
@@ -334,7 +387,7 @@ export default function ChatPanel() {
         </div>
         
         {/* 使用当前会话的根节点作为 Conversation 组件的 rootNodeId，并传递聊天上下文ID */}
-        <Conversation rootNodeId={activeSession?.rootNodeId || 'root'} contextId={MAIN_CHAT_CONTEXT_ID} />
+        <Conversation rootNodeId={activeSession?.rootNodeId || 'root'} contextId={chatContextId} />
       </div>
 
       {/* ===== 输入框 ===== */}

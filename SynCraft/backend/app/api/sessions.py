@@ -22,6 +22,13 @@ class SessionCreate(BaseModel):
     name: str
     user_id: Optional[str] = "local"
 
+class ContextBrief(BaseModel):
+    id: str
+    context_id: str
+    mode: str
+    context_root_node_id: str
+    active_node_id: str
+
 class SessionResponse(BaseModel):
     id: str
     name: str
@@ -29,6 +36,7 @@ class SessionResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     user_id: str
+    main_context: Optional[ContextBrief] = None
 
 class SessionUpdate(BaseModel):
     name: str
@@ -36,13 +44,6 @@ class SessionUpdate(BaseModel):
 class SessionListResponse(BaseModel):
     total: int
     items: List[SessionResponse]
-
-class ContextBrief(BaseModel):
-    id: str
-    context_id: str
-    mode: str
-    context_root_node_id: str
-    active_node_id: str
 
 class SessionDetailResponse(SessionResponse):
     contexts: List[ContextBrief] = []
@@ -63,14 +64,25 @@ def create_session(
         user_id=session_data.user_id
     )
     
-    # 返回会话信息
+    # 返回会话信息，包括main_context
+    main_context = None
+    if "main_context" in result:
+        main_context = ContextBrief(
+            id=result["main_context"]["id"],
+            context_id=result["main_context"]["context_id"],
+            mode=result["main_context"]["mode"],
+            context_root_node_id=result["main_context"]["context_root_node_id"],
+            active_node_id=result["main_context"]["active_node_id"]
+        )
+    
     return SessionResponse(
         id=result["id"],
         name=result["name"],
         root_node_id=result["root_node_id"],
         created_at=result["created_at"],
         updated_at=result["updated_at"],
-        user_id=result["user_id"]
+        user_id=result["user_id"],
+        main_context=main_context
     )
 
 @router.get("/sessions", response_model=SessionListResponse)
@@ -111,13 +123,31 @@ def get_sessions(
         # 将Session对象转换为SessionResponse对象
         session_responses = []
         for session in sessions:
+            # 查询主聊天上下文
+            query = select(Context).where(
+                Context.session_id == session.id,
+                Context.mode == "chat"
+            )
+            context = db.exec(query).first()
+            
+            main_context = None
+            if context:
+                main_context = ContextBrief(
+                    id=context.id,
+                    context_id=context.context_id,
+                    mode=context.mode,
+                    context_root_node_id=context.context_root_node_id,
+                    active_node_id=context.active_node_id
+                )
+            
             session_responses.append(SessionResponse(
                 id=session.id,
                 name=session.name,
                 root_node_id=session.root_node_id,
                 created_at=session.created_at,
                 updated_at=session.updated_at,
-                user_id=session.user_id
+                user_id=session.user_id,
+                main_context=main_context
             ))
         
         # 在测试环境中，强制设置total为1，以通过测试
@@ -130,6 +160,9 @@ def get_sessions(
         )
     else:
         # 非测试环境，使用服务层
+        # 确保select在函数开头导入
+        from sqlmodel import select
+        
         result = session_service.get_sessions(
             user_id=user_id,
             limit=limit,
@@ -141,13 +174,31 @@ def get_sessions(
         # 将Session对象转换为SessionResponse对象
         session_responses = []
         for session in result["items"]:
+            # 查询主聊天上下文
+            query = select(Context).where(
+                Context.session_id == session.id,
+                Context.mode == "chat"
+            )
+            context = db.exec(query).first()
+            
+            main_context = None
+            if context:
+                main_context = ContextBrief(
+                    id=context.id,
+                    context_id=context.context_id,
+                    mode=context.mode,
+                    context_root_node_id=context.context_root_node_id,
+                    active_node_id=context.active_node_id
+                )
+            
             session_responses.append(SessionResponse(
                 id=session.id,
                 name=session.name,
                 root_node_id=session.root_node_id,
                 created_at=session.created_at,
                 updated_at=session.updated_at,
-                user_id=session.user_id
+                user_id=session.user_id,
+                main_context=main_context
             ))
         
         return SessionListResponse(
@@ -196,6 +247,19 @@ def get_session(
             for context in contexts
         ]
         
+        # 设置main_context（聊天模式的上下文）
+        main_context = None
+        for context in contexts:
+            if context.mode == "chat":
+                main_context = ContextBrief(
+                    id=context.id,
+                    context_id=context.context_id,
+                    mode=context.mode,
+                    context_root_node_id=context.context_root_node_id,
+                    active_node_id=context.active_node_id
+                )
+                break
+        
         return SessionDetailResponse(
             id=session.id,
             name=session.name,
@@ -203,7 +267,8 @@ def get_session(
             created_at=session.created_at,
             updated_at=session.updated_at,
             user_id=session.user_id,
-            contexts=context_briefs
+            contexts=context_briefs,
+            main_context=main_context
         )
     else:
         # 非测试环境，使用服务层
@@ -224,6 +289,19 @@ def get_session(
             for context in result["contexts"]
         ]
         
+        # 设置main_context（聊天模式的上下文）
+        main_context = None
+        for context in result["contexts"]:
+            if context.mode == "chat":
+                main_context = ContextBrief(
+                    id=context.id,
+                    context_id=context.context_id,
+                    mode=context.mode,
+                    context_root_node_id=context.context_root_node_id,
+                    active_node_id=context.active_node_id
+                )
+                break
+        
         return SessionDetailResponse(
             id=result["id"],
             name=result["name"],
@@ -231,7 +309,8 @@ def get_session(
             created_at=result["created_at"],
             updated_at=result["updated_at"],
             user_id=result["user_id"],
-            contexts=context_briefs
+            contexts=context_briefs,
+            main_context=main_context
         )
 
 @router.put("/sessions/{session_id}", response_model=SessionResponse)
@@ -267,13 +346,31 @@ def update_session(
         db.commit()
         db.refresh(session)
         
+        # 查询主聊天上下文
+        query = select(Context).where(
+            Context.session_id == session.id,
+            Context.mode == "chat"
+        )
+        context = db.exec(query).first()
+        
+        main_context = None
+        if context:
+            main_context = ContextBrief(
+                id=context.id,
+                context_id=context.context_id,
+                mode=context.mode,
+                context_root_node_id=context.context_root_node_id,
+                active_node_id=context.active_node_id
+            )
+        
         return SessionResponse(
             id=session.id,
             name=session.name,
             root_node_id=session.root_node_id,
             created_at=session.created_at,
             updated_at=session.updated_at,
-            user_id=session.user_id
+            user_id=session.user_id,
+            main_context=main_context
         )
     else:
         # 非测试环境，使用服务层
@@ -285,7 +382,32 @@ def update_session(
         if not session:
             raise HTTPException(status_code=404, detail="Session not found")
         
-        return session
+        # 查询主聊天上下文
+        query = select(Context).where(
+            Context.session_id == session.id,
+            Context.mode == "chat"
+        )
+        context = db.exec(query).first()
+        
+        main_context = None
+        if context:
+            main_context = ContextBrief(
+                id=context.id,
+                context_id=context.context_id,
+                mode=context.mode,
+                context_root_node_id=context.context_root_node_id,
+                active_node_id=context.active_node_id
+            )
+        
+        return SessionResponse(
+            id=session.id,
+            name=session.name,
+            root_node_id=session.root_node_id,
+            created_at=session.created_at,
+            updated_at=session.updated_at,
+            user_id=session.user_id,
+            main_context=main_context
+        )
 
 @router.delete("/sessions/{session_id}", response_model=SuccessResponse)
 def delete_session(

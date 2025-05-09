@@ -29,21 +29,23 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(true);
   const { isTreePanelVisible, toggleTreePanel } = useTreePanelVisibility();
 
-  // 加载消息数据、树状图数据和会话数据
+  // 初始化应用，加载会话数据
   useEffect(() => {
-    // 使用Promise.all同时加载三个数据源
-    Promise.all([
-      useMsgStore.getState().load(),
-      useTreeStore.getState().load(),
-      useSessionStore.getState().load()
-    ])
-    .then(() => {
-      setIsLoading(false);
-    })
-    .catch(error => {
-      console.error('Error loading data:', error);
-      setIsLoading(false);
-    });
+    // 清除localStorage中的会话ID和节点ID
+    localStorage.removeItem('activeSessionId');
+    localStorage.removeItem('activeNodeId');
+    console.log('已清除localStorage中的会话ID和节点ID');
+    
+    // 从服务器获取会话列表
+    useSessionStore.getState().load()
+      .then(() => {
+        console.log('已从服务器获取会话列表');
+        setIsLoading(false);
+      })
+      .catch(error => {
+        console.error('获取会话列表失败:', error);
+        setIsLoading(false);
+      });
   }, []);
   
   // 显示加载状态

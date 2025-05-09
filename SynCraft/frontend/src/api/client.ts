@@ -41,7 +41,7 @@ export interface ApiError extends Error {
  * 默认API配置
  */
 export const defaultConfig: ApiConfig = {
-  baseUrl: "http://localhost:8000",
+  baseUrl: "",  // 使用相对路径，让代理配置生效
   timeout: 10000,
   headers: {
     "Content-Type": "application/json"

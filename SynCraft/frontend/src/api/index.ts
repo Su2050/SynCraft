@@ -95,21 +95,45 @@ export async function fetchNode(id: string): Promise<ChatNode> {
 // 获取大模型的回答
 export const getAssistantAnswer = async (userMessage: string): Promise<string> => {
   try {
-    // 获取当前活动节点ID（这里需要从contextStore获取）
-    // 为了避免循环依赖，这里使用一个临时的方式获取节点ID
-    // 实际实现时应该通过参数传入或其他方式获取
-    const nodeId = localStorage.getItem('activeNodeId') || 'root';
+    // 获取当前活动节点ID
+    const nodeId = localStorage.getItem('activeNodeId');
+    
+    // 检查节点ID是否有效
+    if (!nodeId || nodeId === 'null' || nodeId === 'root') {
+      console.warn(`[${new Date().toISOString()}] getAssistantAnswer - 无效的节点ID: ${nodeId}，回退到直接调用LLM API`);
+      // 直接回退到调用LLM API
+      return await fallbackToDirectLLMCall(userMessage);
+    }
+    
+    console.log(`[${new Date().toISOString()}] getAssistantAnswer - 向节点 ${nodeId} 提问:`, userMessage.substring(0, 50) + '...');
     
     // 使用新的API客户端向节点提问
-    const qaPair = await nodeEndpoints.askQuestion(nodeId, userMessage);
-    
-    return qaPair.answer || '无法获取回答';
+    try {
+      const qaPair = await nodeEndpoints.askQuestion(nodeId, userMessage);
+      console.log(`[${new Date().toISOString()}] getAssistantAnswer - 收到回答:`, qaPair.answer ? qaPair.answer.substring(0, 50) + '...' : '无回答');
+      return qaPair.answer || '无法获取回答';
+    } catch (apiError) {
+      console.error(`[${new Date().toISOString()}] getAssistantAnswer - 使用nodeEndpoints.askQuestion失败:`, apiError);
+      // 不抛出错误，而是回退到直接调用LLM API
+      return await fallbackToDirectLLMCall(userMessage);
+    }
   } catch (error) {
-    console.error('获取大模型回答失败:', error);
+    console.error(`[${new Date().toISOString()}] getAssistantAnswer - 获取大模型回答失败:`, error);
+    // 回退到直接调用LLM API
+    return await fallbackToDirectLLMCall(userMessage);
+  }
+};
+
+// 回退函数：直接调用LLM API
+async function fallbackToDirectLLMCall(userMessage: string): Promise<string> {
+  console.log(`[${new Date().toISOString()}] fallbackToDirectLLMCall - 尝试直接调用LLM API`);
+  
+  // 首先尝试/api/v1/ask接口
+  try {
+    console.log(`[${new Date().toISOString()}] fallbackToDirectLLMCall - 尝试/api/v1/ask接口`);
     
-    // 回退到原有实现
     const backendUrl = "http://localhost:8000";
-    const response = await fetch(`${backendUrl}/ask`, {
+    const response = await fetch(`${backendUrl}/api/v1/ask`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -119,10 +143,40 @@ export const getAssistantAnswer = async (userMessage: string): Promise<string> =
     });
 
     if (!response.ok) {
-      throw new Error("Failed to fetch assistant's answer");
+      console.error(`[${new Date().toISOString()}] fallbackToDirectLLMCall - /api/v1/ask请求失败:`, response.status, response.statusText);
+      throw new Error(`Failed to fetch assistant's answer: ${response.status} ${response.statusText}`);
     }
 
     const data = await response.json();
+    console.log(`[${new Date().toISOString()}] fallbackToDirectLLMCall - /api/v1/ask请求成功:`, data.answer ? data.answer.substring(0, 50) + '...' : '无回答');
     return data.answer;
+  } catch (fallbackError) {
+    console.error(`[${new Date().toISOString()}] fallbackToDirectLLMCall - /api/v1/ask失败:`, fallbackError);
+    
+    // 最后尝试直接调用/ask接口
+    try {
+      console.log(`[${new Date().toISOString()}] fallbackToDirectLLMCall - 尝试/ask接口`);
+      
+      const directBackendUrl = "http://localhost:8000";
+      const response = await fetch(`${directBackendUrl}/ask`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-API-Key": "dev-secret",
+        },
+        body: JSON.stringify({ msg: userMessage, context: [] }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch assistant's answer: ${response.status} ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      console.log(`[${new Date().toISOString()}] fallbackToDirectLLMCall - /ask请求成功:`, data.answer ? data.answer.substring(0, 50) + '...' : '无回答');
+      return data.answer;
+    } catch (directError) {
+      console.error(`[${new Date().toISOString()}] fallbackToDirectLLMCall - 所有尝试都失败:`, directError);
+      return "抱歉，无法获取回答。请稍后再试。";
+    }
   }
 };

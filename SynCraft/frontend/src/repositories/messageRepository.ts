@@ -6,6 +6,8 @@ import { api } from '../api';
 import { getCached, invalidateCache, generateCacheKey } from '../utils/cache';
 import { get as idbGet, set as idbSet } from 'idb-keyval';
 import { nanoid } from 'nanoid';
+import { useTreeStore } from '../store/treeStore';
+import { nodeRepository } from './nodeRepository';
 
 /**
  * 消息仓储实现
@@ -167,13 +169,134 @@ export class MessageRepository implements IMessageRepository {
    */
   async createMessage(nodeId: string, role: MsgRole, content: string, sessionId: string): Promise<Message> {
     try {
+      // 检查节点ID是否为'root'占位符或无效值
+      if (nodeId === 'root' || !nodeId) {
+        console.log(`[${new Date().toISOString()}] MessageRepository - 节点ID是'root'占位符或无效值，创建真实节点`);
+        
+        // 创建一个新的根节点
+        try {
+          const treeStore = useTreeStore.getState();
+          const existingRootNode = treeStore.nodes.find(node => 
+            node.type === 'root' && 
+            node.data && 
+            node.data.sessionId === sessionId
+          );
+          
+          if (existingRootNode) {
+            // 如果会话已有根节点，使用它
+            console.log(`[${new Date().toISOString()}] MessageRepository - 使用会话的现有根节点:`, existingRootNode.id);
+            nodeId = existingRootNode.id;
+          } else {
+            // 否则，创建新的根节点
+            try {
+              // 尝试创建一个带有默认问题的根节点
+              const newRootNode = await nodeRepository.createNode(sessionId, null, content || "新的对话");
+              console.log(`[${new Date().toISOString()}] MessageRepository - 创建新根节点:`, newRootNode.id);
+              nodeId = newRootNode.id;
+            } catch (nodeError) {
+              console.error(`[${new Date().toISOString()}] MessageRepository - 创建根节点失败，尝试使用API直接创建:`, nodeError);
+              
+              // 尝试直接使用API创建节点
+              try {
+                // 获取当前上下文ID
+                const contextId = localStorage.getItem('currentContextId') || `chat-${sessionId}`;
+                
+                // 使用API客户端创建节点
+                const apiNode = await api.nodes.createNode({
+                  session_id: sessionId,
+                  parent_id: null,
+                  template_key: null,
+                  summary_up_to_here: content ? content.substring(0, 100) : "新的对话",
+                  context_id: contextId
+                });
+                
+                // 使用API返回的节点ID
+                nodeId = apiNode.id;
+                console.log(`[${new Date().toISOString()}] MessageRepository - 通过API直接创建根节点成功:`, nodeId);
+              } catch (apiError) {
+                console.error(`[${new Date().toISOString()}] MessageRepository - API创建节点也失败:`, apiError);
+                // 生成一个临时ID作为最后的回退
+                nodeId = `temp-${nanoid()}`;
+                console.log(`[${new Date().toISOString()}] MessageRepository - 使用临时节点ID:`, nodeId);
+              }
+            }
+          }
+        } catch (error) {
+          console.error(`[${new Date().toISOString()}] MessageRepository - 获取树存储失败:`, error);
+          // 生成一个临时ID作为最后的回退
+          nodeId = `temp-${nanoid()}`;
+          console.log(`[${new Date().toISOString()}] MessageRepository - 使用临时节点ID:`, nodeId);
+        }
+      }
+      
       // 如果是用户消息，向节点提问
       if (role === 'user') {
-        await api.nodes.askQuestion(nodeId, content);
+        // 再次检查nodeId是否为'root'或无效值
+        if (nodeId === 'root' || !nodeId) {
+          console.error(`[${new Date().toISOString()}] MessageRepository - 节点ID仍然是'root'占位符或无效值，尝试最后一次创建真实节点`);
+          
+          try {
+            // 最后一次尝试创建节点
+            // 获取当前上下文ID
+            const contextId = localStorage.getItem('currentContextId') || `chat-${sessionId}`;
+            
+            // 使用API客户端创建节点
+            const apiNode = await api.nodes.createNode({
+              session_id: sessionId,
+              parent_id: null,
+              template_key: null,
+              summary_up_to_here: content ? content.substring(0, 100) : "新的对话",
+              context_id: contextId
+            });
+            
+            // 使用API返回的节点ID
+            nodeId = apiNode.id;
+            console.log(`[${new Date().toISOString()}] MessageRepository - 最后尝试创建节点成功:`, nodeId);
+          } catch (error) {
+            // 如果出错，使用临时ID
+            nodeId = `temp-${nanoid()}`;
+            console.log(`[${new Date().toISOString()}] MessageRepository - 最后尝试创建节点出错，使用临时ID:`, nodeId);
+            
+            // 创建一个本地消息并返回
+            const message: Message = {
+              id: nanoid(),
+              nodeId,
+              role,
+              content,
+              ts: Date.now(),
+              sessionId
+            };
+            
+            // 更新本地缓存
+            const allMessages = (await idbGet('msgs')) as Message[] || [];
+            await idbSet('msgs', [...allMessages, message]);
+            
+            // 更新会话特定的消息缓存
+            const sessionMessages = (await idbGet(`msgs-${sessionId}`)) as Message[] || [];
+            await idbSet(`msgs-${sessionId}`, [...sessionMessages, message]);
+            
+            return message;
+          }
+        }
         
-        // 失效相关缓存
-        invalidateCache(generateCacheKey('node', nodeId));
-        invalidateCache(generateCacheKey('node', nodeId, 'qa_pairs'));
+        // 日志记录
+        console.log(`[${new Date().toISOString()}] MessageRepository - 向节点提问，节点ID: ${nodeId}`);
+        
+        try {
+          // 确保nodeId不是'root'
+          if (nodeId !== 'root') {
+            await api.nodes.askQuestion(nodeId, content);
+            
+            // 失效相关缓存
+            invalidateCache(generateCacheKey('node', nodeId));
+            invalidateCache(generateCacheKey('node', nodeId, 'qa_pairs'));
+          } else {
+            console.error(`[${new Date().toISOString()}] MessageRepository - 节点ID仍然是'root'占位符，跳过API请求`);
+          }
+        } catch (askError) {
+          console.error(`[${new Date().toISOString()}] MessageRepository - 向节点提问失败:`, askError);
+          // 不抛出错误，继续创建本地消息
+        }
       }
       
       // 创建消息对象

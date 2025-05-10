@@ -355,7 +355,7 @@ export function useMessages(sessionId: string) {
         const userMessage: Message = {
           id: `user-${timestamp}-${Math.random().toString(36).substring(2, 10)}`,
           session_id: sessionId,
-          parent_id: nodeId || null,
+          parent_id: targetNodeId || null,
           role: 'user',
           content,
           timestamp: new Date().toISOString(),
@@ -365,7 +365,7 @@ export function useMessages(sessionId: string) {
         const assistantMessage: Message = {
           id: `assistant-${timestamp}-${Math.random().toString(36).substring(2, 10)}`,
           session_id: sessionId,
-          parent_id: nodeId || null,
+          parent_id: targetNodeId || null,
           role: 'assistant',
           content: answer,
           timestamp: new Date().toISOString(),

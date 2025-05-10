@@ -238,12 +238,13 @@ export const messageApi = {
           if (qa.messages && qa.messages.length > 0) {
             for (const msg of qa.messages) {
               messages.push({
-                id: msg.id, // 使用后端返回的消息ID
+                id: msg.id,
                 qa_pair_id: qa.id,
                 session_id: sessionId,
                 role: msg.role,
                 content: msg.content,
-                timestamp: msg.timestamp
+                timestamp: msg.timestamp,
+                parent_id: qa.node_id
               });
             }
           } else {
@@ -255,7 +256,8 @@ export const messageApi = {
               session_id: sessionId,
               role: 'user',
               content: qa.question,
-              timestamp: qa.created_at
+              timestamp: qa.created_at,
+              parent_id: qa.node_id
             });
             
             // 添加助手消息
@@ -266,7 +268,8 @@ export const messageApi = {
                 session_id: sessionId,
                 role: 'assistant',
                 content: qa.answer,
-                timestamp: qa.updated_at
+                timestamp: qa.updated_at,
+                parent_id: qa.node_id
               });
             }
           }
@@ -304,11 +307,12 @@ export const messageApi = {
           if (qa.messages && qa.messages.length > 0) {
             for (const msg of qa.messages) {
               messages.push({
-                id: msg.id, // 使用后端返回的消息ID
+                id: msg.id,
                 qa_pair_id: qa.id,
                 role: msg.role,
                 content: msg.content,
-                timestamp: msg.timestamp
+                timestamp: msg.timestamp,
+                parent_id: qa.node_id
               });
             }
           } else {
@@ -319,7 +323,8 @@ export const messageApi = {
               qa_pair_id: qa.id,
               role: 'user',
               content: qa.question,
-              timestamp: qa.created_at
+              timestamp: qa.created_at,
+              parent_id: qa.node_id
             });
             
             // 添加助手消息
@@ -329,7 +334,8 @@ export const messageApi = {
                 qa_pair_id: qa.id,
                 role: 'assistant',
                 content: qa.answer,
-                timestamp: qa.updated_at
+                timestamp: qa.updated_at,
+                parent_id: qa.node_id
               });
             }
           }
@@ -361,7 +367,7 @@ export const nodeApi = {
   create: (data: { session_id: string; parent_id?: string | null; label: string; type: string }) => {
     // 确保data.parent_id不为null，如果为null则删除该字段
     const requestData = { ...data };
-    if (requestData.parent_id === null) {
+    if (requestData.parent_id === null || requestData.parent_id === undefined) {
       delete requestData.parent_id;
     }
     
@@ -381,7 +387,7 @@ export const nodeApi = {
   }) => {
     // 确保data.parent_id不为null，如果为null则删除该字段
     const requestData = { ...data };
-    if (requestData.parent_id === null) {
+    if (requestData.parent_id === null || requestData.parent_id === undefined) {
       delete requestData.parent_id;
     }
     
@@ -485,11 +491,27 @@ export const nodeApi = {
   },
     
   // 创建深挖上下文
-  createDeepDive: (nodeId: string, data: { session_id: string; source?: string }) => 
-    request<ApiResponse<Context>>(`/nodes/${nodeId}/deepdive`, {
+  createDeepDive: async (nodeId: string, data: { session_id: string; source?: string }) => {
+    // 创建深挖上下文
+    const contextResponse = await request<ApiResponse<Context>>(`/contexts`, {
       method: 'POST',
-      body: JSON.stringify(data),
-    }),
+      body: JSON.stringify({
+        mode: 'deepdive',
+        session_id: data.session_id,
+        context_root_node_id: nodeId,
+        active_node_id: nodeId,  // 初始时活动节点就是根节点
+        source: data.source || `深挖: ${nodeId}`
+      }),
+    });
+    
+    // 解析响应
+    const context = parseApiResponse<Context>(contextResponse);
+    
+    // 不再自动创建子节点和发送初始问题
+    // 等待用户主动发送问题时再创建子节点
+    
+    return contextResponse;
+  },
 };
 
 // 深挖相关API

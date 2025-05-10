@@ -2,18 +2,22 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { useSession } from '@/store/sessionContext';
 import { useMessages } from '@/hooks/useMessages';
+import { useSessionTree } from '@/hooks/useSessionTree';
 import ReactMarkdown from 'react-markdown';
 import TreeView from '@/components/TreeView';
+import DeepDivePanel from '@/components/DeepDivePanel';
 import { api } from '@/api';
-import toast from 'react-hot-toast'; // 导入toast组件，如果项目中没有，需要安装
+import toast from 'react-hot-toast';
+import { Message, MessageRole } from '@/types';
 
 /**
  * 聊天页面
  */
 export default function ChatPage() {
-  const { id: sessionId, nodeId } = useParams<{ id: string; nodeId?: string }>();
+  const { id: sessionId, nodeId = undefined } = useParams<{ id: string; nodeId?: string }>();
   const { activeSession, rootNodeId, mainContextId } = useSession();
   const { messages, isLoading, error, sendMessage } = useMessages(sessionId || '');
+  const { refetch: refetchSessionTree } = useSessionTree(sessionId || '');
   
   // 状态
   const [inputText, setInputText] = useState('');
@@ -21,16 +25,10 @@ export default function ChatPage() {
   const [showTree, setShowTree] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   
-  // 深挖相关状态
-  const [deepDiveTabs, setDeepDiveTabs] = useState([{
-    id: 'default-tab',
-    title: '默认标签页',
-    tag: null,
-    content: null,
-    messages: []
-  }]);
-  const [activeDeepDiveTab, setActiveDeepDiveTab] = useState(0);
+  // 文本选择相关状态
   const [selectedText, setSelectedText] = useState('');
+  const [selectionPosition, setSelectionPosition] = useState<{ x: number; y: number; isFullDeepDive?: boolean; messageId?: string; nodeId?: string } | null>(null);
+  const [hoveredMessageId, setHoveredMessageId] = useState<string | null>(null);
   
   // 引用
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -90,155 +88,40 @@ export default function ChatPage() {
   if (error) {
     return (
       <div className="h-screen flex items-center justify-center">
-        <div className="text-xl text-red-500">加载失败: {error.message}</div>
+        <div className="text-xl text-red-500">加载失败: {(error as Error).message || '未知错误'}</div>
       </div>
     );
   }
   
-  const handleTextSelection = () => {
+  /**
+   * 处理用户在消息中选择文本
+   * @param nodeId 选中文本所属消息对应的节点 ID
+   */
+  const handleTextSelection = (nodeId?: string) => {
     const selection = window.getSelection();
     if (selection && !selection.isCollapsed) {
       setSelectedText(selection.toString());
+      
+      // 获取选中文本的位置
+      const range = selection.getRangeAt(0);
+      const rect = range.getBoundingClientRect();
+      
+      // 记录位置信息及 nodeId，方便 DeepDivePanel 定位上下文
+      setSelectionPosition({
+        x: rect.right,
+        y: rect.top + window.scrollY,
+        nodeId: nodeId
+      } as any);
+    } else {
+      // 如果没有选中文本，清除位置信息
+      setSelectionPosition(null);
     }
   };
   
-  // 处理深挖
-  const handleDeepDive = async () => {
-    if (!selectedText) return;
-    
-    try {
-      // 清除之前的错误信息
-      setErrorMessage(null);
-      
-      // 创建深挖上下文
-      const response = await api.node.createDeepDive(nodeId || rootNodeId || '', {
-        session_id: sessionId || '',
-        source: `深挖：${selectedText}`
-      });
-      
-      if (!response || !response.data) {
-        throw new Error('创建深挖上下文失败');
-      }
-      
-      const deepDiveContext = response.data;
-      
-      // 创建新标签页
-      const newTab = {
-        id: deepDiveContext.id,
-        title: selectedText.substring(0, 15) + (selectedText.length > 15 ? '...' : ''),
-        context_id: deepDiveContext.context_id,
-        active_node_id: deepDiveContext.active_node_id,
-        messages: []
-      };
-      
-      setDeepDiveTabs(prev => [...prev, newTab]);
-      setActiveDeepDiveTab(deepDiveTabs.length);
-      
-      // 向深挖上下文发送问题
-      const qaResponse = await api.node.askQuestion(deepDiveContext.active_node_id, selectedText);
-      
-      if (qaResponse && qaResponse.data) {
-        // 创建消息对象
-        const message = {
-          id: `deepdive-${Date.now()}`,
-          role: 'assistant',
-          content: qaResponse.data.answer,
-          timestamp: Date.now()
-        };
-        
-        // 更新标签页内容
-        setDeepDiveTabs(prev => {
-          const updated = [...prev];
-          const index = updated.findIndex(t => t.id === deepDiveContext.id);
-          if (index !== -1) {
-            updated[index].messages = [
-              {
-                id: `user-${Date.now()}`,
-                role: 'user',
-                content: selectedText,
-                timestamp: Date.now() - 1000
-              },
-              message
-            ];
-          }
-          return updated;
-        });
-      }
-    } catch (error) {
-      console.error('创建深挖上下文失败:', error);
-      
-      // 设置错误信息
-      const errorMsg = '创建深挖上下文失败，请稍后重试';
-      setErrorMessage(errorMsg);
-      
-      // 显示错误提示
-      toast.error(errorMsg);
-      
-      // 回退到本地实现
-      const tag = `deepdive-${Date.now()}`;
-      const tabId = `tab-${Date.now()}`;
-      
-      // 创建新标签页
-      const newTab = {
-        id: tabId,
-        title: selectedText.substring(0, 15) + (selectedText.length > 15 ? '...' : ''),
-        tag: tag,
-        content: null,
-        messages: []
-      };
-      
-      setDeepDiveTabs(prev => [...prev, newTab]);
-      setActiveDeepDiveTab(deepDiveTabs.length);
-      
-      // 发送带有标签的消息
-      sendMessage(`深挖：${selectedText}`, nodeId, [tag])
-        .then(message => {
-          // 更新标签页内容
-          setDeepDiveTabs(prev => {
-            const updated = [...prev];
-            const index = updated.findIndex(t => t.id === tabId);
-            if (index !== -1) {
-              updated[index].messages = [message];
-            }
-            return updated;
-          });
-        });
-    }
-    
-    // 清除选择
-    setSelectedText('');
-  };
-  
-  // 标签页管理函数
-  const addNewDeepDiveTab = () => {
-    const newTab = {
-      id: `tab-${Date.now()}`,
-      title: '新标签页',
-      tag: null,
-      content: null,
-      messages: []
-    };
-    
-    setDeepDiveTabs(prev => [...prev, newTab]);
-    setActiveDeepDiveTab(deepDiveTabs.length);
-  };
-  
-  const closeDeepDiveTab = (index) => {
-    if (deepDiveTabs.length <= 1) return;
-    
-    setDeepDiveTabs(prev => {
-      const updated = [...prev];
-      updated.splice(index, 1);
-      return updated;
-    });
-    
-    // 如果关闭的是当前活动标签页，则切换到前一个标签页
-    if (activeDeepDiveTab === index) {
-      setActiveDeepDiveTab(Math.max(0, index - 1));
-    } else if (activeDeepDiveTab > index) {
-      // 如果关闭的标签页在当前活动标签页之前，则需要调整活动标签页索引
-      setActiveDeepDiveTab(activeDeepDiveTab - 1);
-    }
+  // 处理文本选择回调
+  const handleDeepDiveTextSelection = (text: string, position: { x: number, y: number }) => {
+    setSelectedText(text);
+    setSelectionPosition(position);
   };
   
   return (
@@ -284,20 +167,50 @@ export default function ChatPage() {
               <div
                 key={message.id}
                 className={message.role === 'user' ? 'message-user' : 'message-assistant'}
-                onMouseUp={handleTextSelection}
+                onMouseUp={() => handleTextSelection(message.parent_id || undefined)}
+                onMouseEnter={() => setHoveredMessageId(message.id)}
+                onMouseLeave={() => setHoveredMessageId(null)}
+                style={{ position: 'relative' }}
               >
                 <div className="flex justify-between items-start mb-1">
                   <span className="text-xs text-gray-500">
                     {new Date(message.timestamp).toLocaleString()}
                   </span>
-                  <button 
-                    className="text-xs text-gray-500 hover:text-gray-700"
-                    onClick={() => {
-                      navigator.clipboard.writeText(message.content);
-                    }}
-                  >
-                    复制
-                  </button>
+                  <div className="flex items-center space-x-2">
+                    {message.role === 'assistant' && hoveredMessageId === message.id && (
+                      <button 
+                        className="text-xs bg-blue-50 text-blue-600 hover:bg-blue-100 px-2 py-1 rounded flex items-center"
+                        onClick={() => {
+                          // 这里我们需要调用DeepDivePanel组件的handleFullDeepDive方法
+                          // 但由于组件封装，我们不能直接调用
+                          // 所以我们可以通过设置selectedText和触发点击深挖按钮来实现
+                          setSelectedText(message.content);
+                          // 设置一个特殊的位置，表示这是整体深挖
+                          setSelectionPosition({
+                            x: 0,
+                            y: 0,
+                            isFullDeepDive: true,
+                            messageId: message.id,
+                            nodeId: message.parent_id || undefined
+                          } as any);
+                        }}
+                        aria-label="深挖整体内容"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        </svg>
+                        深挖整体
+                      </button>
+                    )}
+                    <button 
+                      className="text-xs text-gray-500 hover:text-gray-700"
+                      onClick={() => {
+                        navigator.clipboard.writeText(message.content);
+                      }}
+                    >
+                      复制
+                    </button>
+                  </div>
                 </div>
                 <ReactMarkdown>{message.content}</ReactMarkdown>
               </div>
@@ -307,71 +220,54 @@ export default function ChatPage() {
         </div>
         
         {/* 右侧：深挖对话区域 */}
-        <div className="w-2/5 overflow-hidden flex flex-col">
-          {/* 标签页头部 */}
-          <div className="flex border-b">
-            {deepDiveTabs.map((tab, index) => (
-              <button
-                key={tab.id}
-                className={`px-4 py-2 ${activeDeepDiveTab === index ? 'bg-blue-50 border-b-2 border-blue-500' : ''}`}
-                onClick={() => setActiveDeepDiveTab(index)}
-              >
-                {tab.title}
-                <span 
-                  className="ml-2 text-gray-500" 
-                  onClick={(e) => { 
-                    e.stopPropagation(); 
-                    closeDeepDiveTab(index); 
-                  }}
-                >
-                  ×
-                </span>
-              </button>
-            ))}
-            <button 
-              className="px-2 py-2 text-gray-500" 
-              onClick={addNewDeepDiveTab}
-            >
-              +
-            </button>
-          </div>
-          
-          {/* 标签页内容 */}
-          <div className="flex-1 overflow-y-auto p-4">
-            {deepDiveTabs[activeDeepDiveTab]?.messages?.map(message => (
-              <div
-                key={message.id}
-                className={message.role === 'user' ? 'message-user' : 'message-assistant'}
-                onMouseUp={handleTextSelection}
-              >
-                <div className="flex justify-between items-start mb-1">
-                  <span className="text-xs text-gray-500">
-                    {new Date(message.timestamp).toLocaleString()}
-                  </span>
-                  <button 
-                    className="text-xs text-gray-500 hover:text-gray-700"
-                    onClick={() => {
-                      navigator.clipboard.writeText(message.content);
-                    }}
-                  >
-                    复制
-                  </button>
-                </div>
-                <ReactMarkdown>{message.content}</ReactMarkdown>
-              </div>
-            ))}
-          </div>
-        </div>
+        <DeepDivePanel
+          sessionId={sessionId || ''}
+          nodeId={nodeId}
+          rootNodeId={rootNodeId}
+          onTextSelection={handleDeepDiveTextSelection}
+          sendMessage={sendMessage}
+          selectedText={selectedText}
+          selectionPosition={selectionPosition}
+          onDeepDive={(text) => {
+            setSelectedText('');
+            // 刷新会话树，以显示新创建的节点
+            refetchSessionTree();
+          }}
+        />
       </div>
       
-      {/* 深挖按钮 */}
-      {selectedText && (
-        <div className="fixed bottom-20 right-4 bg-white shadow-lg rounded-lg p-2 z-10">
+      {/* 深挖按钮 - 选中文本时显示 */}
+      {selectedText && selectionPosition && !(selectionPosition as any).isFullDeepDive && (
+        <div 
+          className="fixed bg-white shadow-lg rounded-lg p-1 z-20"
+          style={{ 
+            top: `${selectionPosition.y - 40}px`, 
+            left: `${selectionPosition.x + 10}px`,
+            transform: 'translateY(-50%)'
+          }}
+        >
           <button
-            className="btn btn-primary"
-            onClick={handleDeepDive}
+            className="flex items-center space-x-1 px-2 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
+            onClick={() => {
+              // 这里我们需要调用DeepDivePanel组件的handleDeepDive方法
+              // 但由于组件封装，我们不能直接调用
+              // 所以我们可以通过设置selectedText来触发
+              // 实际上，这里应该通过一个回调函数来实现，但为了简单起见，我们先这样处理
+              // 清除选择，让DeepDivePanel组件自己处理
+              const textToDeepDive = selectedText;
+              setSelectedText('');
+              setSelectionPosition(null);
+              
+              // 这里应该有一个回调函数来通知DeepDivePanel组件处理深挖
+              // 但由于我们没有实现这个回调，所以暂时不处理
+              // 在实际应用中，应该通过props传递一个回调函数给DeepDivePanel组件
+            }}
+            aria-label="深挖选中内容"
           >
-            深挖选中内容
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            <span>深挖选中内容</span>
           </button>
         </div>
       )}

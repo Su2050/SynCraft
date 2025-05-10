@@ -37,6 +37,12 @@ class ContextService:
         else:
             context_id = f"{mode}-{context_root_node_id}-{session_id}"
         
+        # 检查是否已存在具有相同context_id的上下文
+        existing_context = self.get_context_by_context_id(context_id)
+        if existing_context:
+            print(f"已存在具有相同context_id的上下文: {context_id}，返回现有上下文")
+            return existing_context
+        
         # 创建上下文
         context = Context(
             context_id=context_id,

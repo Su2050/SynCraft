@@ -17,8 +17,8 @@ export function useSessionTree(sessionId: string) {
     ['sessionTree', sessionId],
     async () => {
       try {
-        // 尝试获取会话树
-        const response = await api.session.getTree(sessionId);
+        // 尝试获取会话树，明确指定includeQA为true
+        const response = await api.session.getTree(sessionId, true);
         return response;
       } catch (error) {
         console.error(`[${new Date().toISOString()}] 获取会话树失败:`, error);

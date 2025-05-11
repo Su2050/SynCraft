@@ -1,5 +1,6 @@
 # backend/app/services/context_service.py
 from sqlmodel import Session, select
+from sqlalchemy.exc import IntegrityError
 from app.models.context import Context
 from app.models.context_node import ContextNode
 from app.models.node import Node
@@ -7,6 +8,7 @@ from app.models.session import Session as SessionModel
 from nanoid import generate
 from datetime import datetime
 from typing import List, Dict, Optional, Any
+import time
 
 class ContextService:
     def __init__(self, db: Session):
@@ -37,35 +39,105 @@ class ContextService:
         else:
             context_id = f"{mode}-{context_root_node_id}-{session_id}"
         
-        # 检查是否已存在具有相同context_id的上下文
-        existing_context = self.get_context_by_context_id(context_id)
+        # 先检查是否已存在相同context_id的上下文，避免开始不必要的事务
+        existing_context = self.db.exec(
+            select(Context).where(Context.context_id == context_id)
+        ).first()
+        
         if existing_context:
-            print(f"已存在具有相同context_id的上下文: {context_id}，返回现有上下文")
+            print(f"已存在具有相同context_id的上下文: {context_id}")
             return existing_context
         
-        # 创建上下文
-        context = Context(
-            context_id=context_id,
-            mode=mode,
-            session_id=session_id,
-            context_root_node_id=context_root_node_id,
-            active_node_id=context_root_node_id,
-            source=source
-        )
-        self.db.add(context)
-        self.db.commit()
-        self.db.refresh(context)
+        # 使用事务和锁机制确保不会创建重复的上下文
+        max_retries = 3
+        retry_count = 0
         
-        # 创建上下文节点关系（根节点）
-        context_node = ContextNode(
-            context_id=context.id,
-            node_id=context_root_node_id,
-            relation_type="root"
-        )
-        self.db.add(context_node)
-        self.db.commit()
+        while retry_count < max_retries:
+            try:
+                # 开始事务（如果会话没有活动的事务）
+                if not hasattr(self.db, "_is_transaction_active") or not self.db._is_transaction_active:
+                    try:
+                        self.db.begin()
+                    except Exception as e:
+                        # 如果开始事务失败，可能是因为已经有一个活动的事务
+                        print(f"开始事务失败，可能已经有一个活动的事务: {e}")
+                        # 继续执行，不要抛出异常
+                
+                # 获取行级锁，防止并发问题
+                # 注意：这里使用了FOR UPDATE子句，它会锁定查询返回的行，直到事务结束
+                existing_contexts = self.db.exec(
+                    select(Context).where(Context.context_id == context_id).with_for_update()
+                ).all()
+                
+                if existing_contexts:
+                    print(f"已存在具有相同context_id的上下文: {context_id}，数量: {len(existing_contexts)}")
+                    # 如果存在多个具有相同context_id的上下文，使用第一个
+                    existing_context = existing_contexts[0]
+                    
+                    # 提交事务（释放锁）
+                    self.db.commit()
+                    
+                    print(f"返回现有上下文: id={existing_context.id}, context_id={existing_context.context_id}")
+                    return existing_context
+                
+                # 创建上下文
+                context = Context(
+                    context_id=context_id,
+                    mode=mode,
+                    session_id=session_id,
+                    context_root_node_id=context_root_node_id,
+                    active_node_id=context_root_node_id,
+                    source=source
+                )
+                self.db.add(context)
+                
+                # 提交事务（这会释放锁）
+                self.db.commit()
+                self.db.refresh(context)
+                
+                print(f"创建新上下文: id={context.id}, context_id={context.context_id}")
+                
+                # 创建上下文节点关系（根节点）
+                context_node = ContextNode(
+                    context_id=context.id,
+                    node_id=context_root_node_id,
+                    relation_type="root"
+                )
+                self.db.add(context_node)
+                self.db.commit()
+                
+                return context
+                
+            except IntegrityError as e:
+                # 回滚事务
+                self.db.rollback()
+                
+                # 如果是唯一约束冲突，尝试获取已存在的上下文
+                if "unique constraint" in str(e).lower() or "duplicate key" in str(e).lower():
+                    print(f"捕获到唯一约束冲突: {e}")
+                    existing_context = self.db.exec(
+                        select(Context).where(Context.context_id == context_id)
+                    ).first()
+                    
+                    if existing_context:
+                        print(f"返回已存在的上下文: id={existing_context.id}, context_id={existing_context.context_id}")
+                        return existing_context
+                
+                # 其他类型的错误，增加重试计数
+                retry_count += 1
+                print(f"创建上下文时发生错误 (尝试 {retry_count}/{max_retries}): {e}")
+                
+                # 等待一小段时间后重试
+                time.sleep(0.1)
+            
+            except Exception as e:
+                # 回滚事务
+                self.db.rollback()
+                print(f"创建上下文时发生未预期的错误: {e}")
+                raise
         
-        return context
+        # 如果达到最大重试次数仍然失败，抛出异常
+        raise ValueError(f"创建上下文失败，达到最大重试次数 ({max_retries})")
     
     def get_context(self, context_id: str) -> Optional[Context]:
         """获取上下文详情"""

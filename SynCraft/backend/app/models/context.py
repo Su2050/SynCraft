@@ -8,7 +8,7 @@ class Context(SQLModel, table=True):
     id: str = Field(default_factory=generate, primary_key=True, index=True)
     
     # 上下文ID，格式为：chat-{sessionId} 或 deepdive-{nodeId}-{sessionId}
-    context_id: str = Field(index=True)
+    context_id: str = Field(index=True, unique=True)
     
     # 上下文模式：chat（聊天模式）或 deepdive（深挖模式）
     mode: str

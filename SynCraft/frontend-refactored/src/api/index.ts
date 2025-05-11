@@ -21,7 +21,210 @@ async function request<T>(
   // 检查是否使用本地模式
   if (isLocalMode()) {
     console.log(`[${new Date().toISOString()}] 使用本地模式，跳过API请求: ${endpoint}`);
-    throw new Error('使用本地模式，跳过API请求');
+    
+    // 根据不同的端点返回不同的模拟数据
+    if (endpoint.includes('/sessions') && !endpoint.includes('/tree')) {
+      // 如果是获取会话列表或会话详情
+      if (endpoint === '/sessions') {
+        // 返回空会话列表
+        return { items: [], total: 0 } as unknown as T;
+      } else {
+        // 返回会话详情
+        const sessionId = endpoint.split('/')[2];
+        return {
+          id: sessionId,
+          name: '本地会话',
+          root_node_id: `root-${sessionId}`,
+          main_context: {
+            id: `context-${sessionId}`,
+            context_root_node_id: `root-${sessionId}`,
+            active_node_id: `root-${sessionId}`
+          },
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        } as unknown as T;
+      }
+    } else if (endpoint.includes('/tree')) {
+      // 如果是获取会话树
+      const sessionId = endpoint.split('/')[2];
+      
+      // 根据会话ID生成不同的树形图数据
+      if (sessionId.includes('CdBMO0rl8gk2eUDH7ycyD')) {
+        // 第一个会话 - AI新世纪
+        return {
+          nodes: [
+            {
+              id: `root-${sessionId}`,
+              parent_id: null,
+              label: 'AI新世纪根节点',
+              type: 'root',
+              template_key: 'root'
+            },
+            {
+              id: `node-1-${sessionId}`,
+              parent_id: `root-${sessionId}`,
+              label: 'AI发展历史',
+              type: 'normal'
+            },
+            {
+              id: `node-2-${sessionId}`,
+              parent_id: `root-${sessionId}`,
+              label: '未来展望',
+              type: 'normal'
+            }
+          ],
+          edges: [
+            {
+              source: `root-${sessionId}`,
+              target: `node-1-${sessionId}`
+            },
+            {
+              source: `root-${sessionId}`,
+              target: `node-2-${sessionId}`
+            }
+          ]
+        } as unknown as T;
+      } else if (sessionId.includes('Ey7Jm0rl8gk2eUDH7ycyF')) {
+        // 第二个会话 - AI新时代
+        return {
+          nodes: [
+            {
+              id: `root-${sessionId}`,
+              parent_id: null,
+              label: 'AI新时代根节点',
+              type: 'root',
+              template_key: 'root'
+            },
+            {
+              id: `node-1-${sessionId}`,
+              parent_id: `root-${sessionId}`,
+              label: '当前技术',
+              type: 'normal'
+            },
+            {
+              id: `node-2-${sessionId}`,
+              parent_id: `node-1-${sessionId}`,
+              label: '应用场景',
+              type: 'normal'
+            }
+          ],
+          edges: [
+            {
+              source: `root-${sessionId}`,
+              target: `node-1-${sessionId}`
+            },
+            {
+              source: `node-1-${sessionId}`,
+              target: `node-2-${sessionId}`
+            }
+          ]
+        } as unknown as T;
+      } else if (sessionId.includes('Fy8Km0rl8gk2eUDH7ycyG')) {
+        // 第三个会话 - AI新世界
+        return {
+          nodes: [
+            {
+              id: `root-${sessionId}`,
+              parent_id: null,
+              label: 'AI新世界根节点',
+              type: 'root',
+              template_key: 'root'
+            },
+            {
+              id: `node-1-${sessionId}`,
+              parent_id: `root-${sessionId}`,
+              label: '全球影响',
+              type: 'normal'
+            },
+            {
+              id: `node-2-${sessionId}`,
+              parent_id: `root-${sessionId}`,
+              label: '伦理问题',
+              type: 'normal'
+            },
+            {
+              id: `node-3-${sessionId}`,
+              parent_id: `node-2-${sessionId}`,
+              label: '监管框架',
+              type: 'normal'
+            }
+          ],
+          edges: [
+            {
+              source: `root-${sessionId}`,
+              target: `node-1-${sessionId}`
+            },
+            {
+              source: `root-${sessionId}`,
+              target: `node-2-${sessionId}`
+            },
+            {
+              source: `node-2-${sessionId}`,
+              target: `node-3-${sessionId}`
+            }
+          ]
+        } as unknown as T;
+      } else {
+        // 默认树形图数据
+        return {
+          nodes: [
+            {
+              id: `root-${sessionId}`,
+              parent_id: null,
+              label: '根节点',
+              type: 'root',
+              template_key: 'root'
+            },
+            {
+              id: `node-1-${sessionId}`,
+              parent_id: `root-${sessionId}`,
+              label: '子节点1',
+              type: 'normal'
+            }
+          ],
+          edges: [
+            {
+              source: `root-${sessionId}`,
+              target: `node-1-${sessionId}`
+            }
+          ]
+        } as unknown as T;
+      }
+    } else if (endpoint.includes('/qa_pairs')) {
+      // 如果是获取QA对
+      return {
+        items: [],
+        total: 0
+      } as unknown as T;
+    } else if (endpoint.includes('/contexts')) {
+      // 如果是获取上下文
+      if (endpoint.includes('/contexts/')) {
+        // 获取单个上下文
+        const contextId = endpoint.split('/')[3];
+        return {
+          id: contextId,
+          context_id: contextId,
+          mode: 'chat',
+          context_root_node_id: `root-${contextId.split('-')[1]}`,
+          active_node_id: `root-${contextId.split('-')[1]}`
+        } as unknown as T;
+      } else {
+        // 获取上下文列表
+        const sessionId = endpoint.split('/')[2];
+        return [
+          {
+            id: `context-${sessionId}`,
+            context_id: `context-${sessionId}`,
+            mode: 'chat',
+            context_root_node_id: `root-${sessionId}`,
+            active_node_id: `root-${sessionId}`
+          }
+        ] as unknown as T;
+      }
+    }
+    
+    // 对于其他端点，返回空对象
+    return {} as T;
   }
 
   const url = `${API_BASE_URL}${endpoint}`;
@@ -115,7 +318,29 @@ export const sessionApi = {
 
 // 消息相关API
 export const messageApi = {
-  // 获取会话的所有消息
+  // 获取会话的所有消息（新API）
+  getSessionMessages: async (sessionId: string) => {
+    try {
+      console.log(`[${new Date().toISOString()}] 尝试获取会话 ${sessionId} 的所有消息`);
+      
+      // 使用新的API端点
+      const response = await request<ApiResponse<{ items: Message[], total: number }>>(`/sessions/${sessionId}/messages`);
+      console.log(`[${new Date().toISOString()}] 获取会话所有消息成功:`, response);
+      
+      return {
+        data: {
+          items: response.data?.items || [],
+          total: response.data?.total || 0
+        }
+      };
+    } catch (error) {
+      console.error(`[${new Date().toISOString()}] 获取会话所有消息失败:`, error);
+      // 回退到原来的方法
+      return messageApi.getBySession(sessionId);
+    }
+  },
+  
+  // 获取会话的所有消息（原方法）
   getBySession: async (sessionId: string, retryCount = 3, retryDelay = 1000) => {
     try {
       // 首先获取会话详情，获取根节点ID
@@ -135,6 +360,11 @@ export const messageApi = {
       let requestUrl = `${API_BASE_URL}/sessions/${sessionId}`;
       console.log(`[${new Date().toISOString()}] 完整请求URL:`, requestUrl);
       
+      // 尝试多种方法获取根节点ID
+      let rootNodeId = null;
+      let mainContextId = null;
+      
+      // 方法1: 尝试获取会话详情
       for (let i = 0; i < retryCount; i++) {
         try {
           console.log(`[${new Date().toISOString()}] 尝试获取会话详情，尝试次数: ${i + 1}, URL: ${requestUrl}`);
@@ -196,92 +426,350 @@ export const messageApi = {
         }
       }
       
-      // 检查会话响应
-      if (!sessionResponse || !sessionResponse.data) {
-        console.error(`[${new Date().toISOString()}] 无法获取会话详情，已达到最大重试次数 (${retryCount})`);
-        console.error(`[${new Date().toISOString()}] 最后一次错误:`, lastError);
+      // 如果成功获取会话详情，尝试从中获取根节点ID
+      if (sessionResponse && sessionResponse.data) {
+        // 详细记录会话响应数据，帮助调试
+        console.log(`[${new Date().toISOString()}] 会话详情数据:`, JSON.stringify(sessionResponse.data, null, 2));
         
-        // 尝试直接使用curl命令的方式获取数据（仅在控制台显示指令，不实际执行）
-        console.log(`[${new Date().toISOString()}] 调试提示: 可以在终端中执行以下命令检查API响应:`);
-        console.log(`curl -s ${requestUrl} | python -m json.tool`);
+        // 尝试从root_node_id或main_context获取根节点ID
+        rootNodeId = sessionResponse.data.root_node_id;
+        console.log(`[${new Date().toISOString()}] 从会话详情中获取root_node_id:`, rootNodeId);
         
-        throw lastError || new Error('无法获取会话详情');
+        // 如果没有root_node_id但有main_context，则使用main_context中的context_root_node_id
+        if (!rootNodeId && sessionResponse.data.main_context) {
+          rootNodeId = sessionResponse.data.main_context.context_root_node_id;
+          mainContextId = sessionResponse.data.main_context.id;
+          console.log(`[${new Date().toISOString()}] 使用main_context中的context_root_node_id:`, rootNodeId);
+          console.log(`[${new Date().toISOString()}] 使用main_context中的id:`, mainContextId);
+        }
       }
       
-      // 详细记录会话响应数据，帮助调试
-      console.log(`[${new Date().toISOString()}] 会话详情数据:`, JSON.stringify(sessionResponse.data, null, 2));
-      
-      // 尝试从root_node_id或main_context获取根节点ID
-      let rootNodeId = sessionResponse.data.root_node_id;
-      console.log(`[${new Date().toISOString()}] 从会话详情中获取root_node_id:`, rootNodeId);
-      
-      // 如果没有root_node_id但有main_context，则使用main_context中的context_root_node_id
-      if (!rootNodeId && sessionResponse.data.main_context) {
-        rootNodeId = sessionResponse.data.main_context.context_root_node_id;
-        console.log(`[${new Date().toISOString()}] 使用main_context中的context_root_node_id:`, rootNodeId);
-      }
-      
-      // 如果仍然没有rootNodeId，返回空消息列表而不是抛出错误
+      // 方法2: 如果方法1失败，尝试获取会话的上下文列表
       if (!rootNodeId) {
-        console.error(`[${new Date().toISOString()}] 无法获取会话的根节点ID，返回空消息列表`);
+        console.log(`[${new Date().toISOString()}] 无法从会话详情获取根节点ID，尝试获取会话的上下文列表`);
+        try {
+          const contextsResponse = await api.context.getBySession(sessionId);
+          const contextList = parseApiResponse<any[]>(contextsResponse);
+          
+          // 找到主聊天上下文（mode === 'chat'）
+          const mainContext = contextList.find(ctx => ctx.mode === 'chat');
+          if (mainContext) {
+            rootNodeId = mainContext.context_root_node_id;
+            mainContextId = mainContext.id;
+            console.log(`[${new Date().toISOString()}] 从上下文列表中找到主上下文，context_root_node_id:`, rootNodeId);
+            console.log(`[${new Date().toISOString()}] 从上下文列表中找到主上下文，id:`, mainContextId);
+          }
+        } catch (error) {
+          console.error(`[${new Date().toISOString()}] 获取会话的上下文列表失败:`, error);
+        }
+      }
+      
+      // 方法3: 如果方法1和方法2都失败，尝试获取会话树
+      if (!rootNodeId) {
+        console.log(`[${new Date().toISOString()}] 无法从上下文列表获取根节点ID，尝试获取会话树`);
+        try {
+          const treeResponse = await api.session.getTree(sessionId, true);
+          const tree = parseApiResponse<any>(treeResponse);
+          
+          if (tree && tree.nodes && tree.nodes.length > 0) {
+            // 找到根节点（parent_id为null的节点）
+            const rootNode = tree.nodes.find((node: any) => !node.parent_id);
+            if (rootNode) {
+              rootNodeId = rootNode.id;
+              console.log(`[${new Date().toISOString()}] 从会话树中找到根节点ID:`, rootNodeId);
+            }
+          }
+        } catch (error) {
+          console.error(`[${new Date().toISOString()}] 获取会话树失败:`, error);
+        }
+      }
+      
+      // 如果所有方法都失败，返回空消息列表
+      if (!rootNodeId) {
+        console.error(`[${new Date().toISOString()}] 所有方法都无法获取会话的根节点ID，返回空消息列表`);
         return { data: { items: [], total: 0 } };
       }
       
       // 使用根节点ID获取QA对
-      const response = await nodeApi.getQAPairs(rootNodeId);
-      
-      // 将QA对转换为消息格式
-      const messages: Message[] = [];
-      if (response && response.data && response.data.items) {
-        for (const qa of response.data.items) {
+      try {
+        console.log(`[${new Date().toISOString()}] 使用根节点ID ${rootNodeId} 获取QA对`);
+        
+        // 记录更多调试信息
+        console.log(`[${new Date().toISOString()}] 调用nodeApi.getQAPairs前的参数检查:`);
+        console.log(`[${new Date().toISOString()}] rootNodeId类型: ${typeof rootNodeId}, 值: ${rootNodeId}`);
+        
+        // 确保rootNodeId是字符串
+        if (typeof rootNodeId !== 'string') {
+          console.error(`[${new Date().toISOString()}] rootNodeId不是字符串，尝试转换`);
+          rootNodeId = String(rootNodeId);
+        }
+        
+        const response = await nodeApi.getQAPairs(rootNodeId);
+        console.log(`[${new Date().toISOString()}] nodeApi.getQAPairs响应:`, response);
+        
+        // 将QA对转换为消息格式
+        let messages: Message[] = [];
+        
+        // 检查response的结构
+        if (response) {
+          console.log(`[${new Date().toISOString()}] response存在，检查其结构`);
+          console.log(`[${new Date().toISOString()}] response.data: ${typeof response.data}, 是否存在: ${!!response.data}`);
+          
+          if (response.data) {
+            console.log(`[${new Date().toISOString()}] response.data.items: ${typeof response.data.items}, 是否存在: ${!!response.data.items}`);
+            
+            if (response.data.items) {
+              console.log(`[${new Date().toISOString()}] response.data.items是否为数组: ${Array.isArray(response.data.items)}`);
+              console.log(`[${new Date().toISOString()}] response.data.items长度: ${response.data.items.length}`);
+            }
+          }
+        }
+        
+        // 尝试多种可能的数据结构路径
+        let qaItems: any[] = [];
+        
+        if (response && response.data && (response.data as any).items) {
+          qaItems = (response.data as any).items;
+        } else if (response && (response as any).items) {
+          qaItems = (response as any).items;
+        } else if (response && Array.isArray(response)) {
+          qaItems = response;
+        } else if (response && typeof response === 'object') {
+          // 尝试从对象中提取items字段
+          const possibleItems = Object.values(response).find(val => Array.isArray(val));
+          if (possibleItems) {
+            qaItems = possibleItems;
+          }
+        }
+        
+        console.log(`[${new Date().toISOString()}] 最终提取的QA对数量: ${qaItems.length}`);
+        
+        // 处理QA对
+        for (const qa of qaItems) {
+          console.log(`[${new Date().toISOString()}] 处理QA对:`, qa);
+          
           // 如果QA对包含消息数组，直接使用这些消息
           if (qa.messages && qa.messages.length > 0) {
+            console.log(`[${new Date().toISOString()}] QA对包含消息数组，长度: ${qa.messages.length}`);
+            
             for (const msg of qa.messages) {
               messages.push({
-                id: msg.id,
+                id: msg.id || `msg-${Math.random().toString(36).substring(2, 10)}`,
                 qa_pair_id: qa.id,
                 session_id: sessionId,
                 role: msg.role,
                 content: msg.content,
-                timestamp: msg.timestamp,
+                timestamp: msg.timestamp || new Date().toISOString(),
                 parent_id: qa.node_id
               });
             }
           } else {
+            console.log(`[${new Date().toISOString()}] QA对不包含消息数组，创建消息`);
+            console.log(`[${new Date().toISOString()}] qa.question: ${qa.question}, qa.answer: ${qa.answer}`);
+            
             // 如果没有消息数组，则创建消息（兼容旧版API）
             // 添加用户消息
-            messages.push({
-              id: `user-${qa.id}-${Math.random().toString(36).substring(2, 10)}`, // 添加随机字符串确保唯一性
-              qa_pair_id: qa.id,
-              session_id: sessionId,
-              role: 'user',
-              content: qa.question,
-              timestamp: qa.created_at,
-              parent_id: qa.node_id
-            });
-            
-            // 添加助手消息
-            if (qa.answer) {
+            if (qa.question) {
               messages.push({
-                id: `assistant-${qa.id}-${Math.random().toString(36).substring(2, 10)}`, // 添加随机字符串确保唯一性
+                id: `user-${qa.id}-${Math.random().toString(36).substring(2, 10)}`, // 添加随机字符串确保唯一性
                 qa_pair_id: qa.id,
                 session_id: sessionId,
-                role: 'assistant',
-                content: qa.answer,
-                timestamp: qa.updated_at,
+                role: 'user',
+                content: qa.question,
+                timestamp: qa.created_at || new Date().toISOString(),
                 parent_id: qa.node_id
               });
+              
+              // 添加助手消息
+              if (qa.answer) {
+                messages.push({
+                  id: `assistant-${qa.id}-${Math.random().toString(36).substring(2, 10)}`, // 添加随机字符串确保唯一性
+                  qa_pair_id: qa.id,
+                  session_id: sessionId,
+                  role: 'assistant',
+                  content: qa.answer,
+                  timestamp: qa.updated_at || new Date().toISOString(),
+                  parent_id: qa.node_id
+                });
+              }
             }
           }
         }
+        
+        // 尝试获取主对话context的消息
+        console.log(`[${new Date().toISOString()}] 尝试获取主对话context的消息`);
+        try {
+          // 首先获取会话的所有上下文
+          const contextsResponse = await api.context.getBySession(sessionId);
+          const contextList = parseApiResponse<any[]>(contextsResponse);
+          
+          // 找到主聊天上下文（mode === 'chat'）
+          const mainContext = contextList.find(ctx => ctx.mode === 'chat');
+          
+          if (mainContext) {
+            console.log(`[${new Date().toISOString()}] 找到主对话context: ${mainContext.id}`);
+            
+            // 获取主对话context的活动节点
+            const activeNodeId = mainContext.active_node_id;
+            console.log(`[${new Date().toISOString()}] 主对话context的活动节点: ${activeNodeId}`);
+            
+            if (activeNodeId) {
+              // 获取活动节点的QA对
+              console.log(`[${new Date().toISOString()}] 尝试获取活动节点 ${activeNodeId} 的QA对`);
+              const nodeResponse = await nodeApi.getQAPairs(activeNodeId);
+              
+              // 尝试多种可能的数据结构路径
+              let nodeQaItems: any[] = [];
+              
+              if (nodeResponse && nodeResponse.data && (nodeResponse.data as any).items) {
+                nodeQaItems = (nodeResponse.data as any).items;
+              } else if (nodeResponse && (nodeResponse as any).items) {
+                nodeQaItems = (nodeResponse as any).items;
+              } else if (nodeResponse && Array.isArray(nodeResponse)) {
+                nodeQaItems = nodeResponse;
+              }
+              
+              if (nodeQaItems.length > 0) {
+                console.log(`[${new Date().toISOString()}] 从活动节点 ${activeNodeId} 获取到 ${nodeQaItems.length} 个QA对`);
+                
+                // 处理QA对
+                for (const qa of nodeQaItems) {
+                  // 处理QA对，与上面的逻辑相同
+                  if (qa.messages && qa.messages.length > 0) {
+                    for (const msg of qa.messages) {
+                      messages.push({
+                        id: msg.id || `msg-${Math.random().toString(36).substring(2, 10)}`,
+                        qa_pair_id: qa.id,
+                        session_id: sessionId,
+                        role: msg.role,
+                        content: msg.content,
+                        timestamp: msg.timestamp || new Date().toISOString(),
+                        parent_id: qa.node_id || activeNodeId
+                      });
+                    }
+                  } else if (qa.question) {
+                    // 添加用户消息
+                    messages.push({
+                      id: `user-${qa.id}-${Math.random().toString(36).substring(2, 10)}`,
+                      qa_pair_id: qa.id,
+                      session_id: sessionId,
+                      role: 'user',
+                      content: qa.question,
+                      timestamp: qa.created_at || new Date().toISOString(),
+                      parent_id: qa.node_id || activeNodeId
+                    });
+                    
+                    // 添加助手消息
+                    if (qa.answer) {
+                      messages.push({
+                        id: `assistant-${qa.id}-${Math.random().toString(36).substring(2, 10)}`,
+                        qa_pair_id: qa.id,
+                        session_id: sessionId,
+                        role: 'assistant',
+                        content: qa.answer,
+                        timestamp: qa.updated_at || new Date().toISOString(),
+                        parent_id: qa.node_id || activeNodeId
+                      });
+                    }
+                  }
+                }
+              }
+            }
+            
+            // 获取主对话context的根节点
+            const contextRootNodeId = mainContext.context_root_node_id;
+            console.log(`[${new Date().toISOString()}] 主对话context的根节点: ${contextRootNodeId}`);
+            
+            if (contextRootNodeId && contextRootNodeId !== activeNodeId) {
+              // 获取根节点的QA对
+              console.log(`[${new Date().toISOString()}] 尝试获取根节点 ${contextRootNodeId} 的QA对`);
+              const rootNodeResponse = await nodeApi.getQAPairs(contextRootNodeId);
+              
+              // 尝试多种可能的数据结构路径
+              let rootNodeQaItems: any[] = [];
+              
+              if (rootNodeResponse && rootNodeResponse.data && (rootNodeResponse.data as any).items) {
+                rootNodeQaItems = (rootNodeResponse.data as any).items;
+              } else if (rootNodeResponse && (rootNodeResponse as any).items) {
+                rootNodeQaItems = (rootNodeResponse as any).items;
+              } else if (rootNodeResponse && Array.isArray(rootNodeResponse)) {
+                rootNodeQaItems = rootNodeResponse;
+              }
+              
+              if (rootNodeQaItems.length > 0) {
+                console.log(`[${new Date().toISOString()}] 从根节点 ${contextRootNodeId} 获取到 ${rootNodeQaItems.length} 个QA对`);
+                
+                // 处理QA对
+                for (const qa of rootNodeQaItems) {
+                  // 处理QA对，与上面的逻辑相同
+                  if (qa.messages && qa.messages.length > 0) {
+                    for (const msg of qa.messages) {
+                      messages.push({
+                        id: msg.id || `msg-${Math.random().toString(36).substring(2, 10)}`,
+                        qa_pair_id: qa.id,
+                        session_id: sessionId,
+                        role: msg.role,
+                        content: msg.content,
+                        timestamp: msg.timestamp || new Date().toISOString(),
+                        parent_id: qa.node_id || contextRootNodeId
+                      });
+                    }
+                  } else if (qa.question) {
+                    // 添加用户消息
+                    messages.push({
+                      id: `user-${qa.id}-${Math.random().toString(36).substring(2, 10)}`,
+                      qa_pair_id: qa.id,
+                      session_id: sessionId,
+                      role: 'user',
+                      content: qa.question,
+                      timestamp: qa.created_at || new Date().toISOString(),
+                      parent_id: qa.node_id || contextRootNodeId
+                    });
+                    
+                    // 添加助手消息
+                    if (qa.answer) {
+                      messages.push({
+                        id: `assistant-${qa.id}-${Math.random().toString(36).substring(2, 10)}`,
+                        qa_pair_id: qa.id,
+                        session_id: sessionId,
+                        role: 'assistant',
+                        content: qa.answer,
+                        timestamp: qa.updated_at || new Date().toISOString(),
+                        parent_id: qa.node_id || contextRootNodeId
+                      });
+                    }
+                  }
+                }
+              }
+            }
+            
+            // 按时间戳排序消息
+            messages.sort((a, b) => {
+              const timeA = typeof a.timestamp === 'number' ? a.timestamp : new Date(a.timestamp).getTime();
+              const timeB = typeof b.timestamp === 'number' ? b.timestamp : new Date(b.timestamp).getTime();
+              return timeA - timeB;
+            });
+            
+            console.log(`[${new Date().toISOString()}] 最终获取到 ${messages.length} 条主对话消息`);
+          } else {
+            console.log(`[${new Date().toISOString()}] 未找到主对话context`);
+          }
+        } catch (error) {
+          console.error(`[${new Date().toISOString()}] 获取主对话context的消息失败:`, error);
+        }
+        
+        console.log(`[${new Date().toISOString()}] 最终获取到 ${messages.length} 条消息`);
+        return {
+          data: {
+            items: messages,
+            total: messages.length
+          }
+        };
+      } catch (error) {
+        console.error(`[${new Date().toISOString()}] 获取QA对失败:`, error);
+        return { data: { items: [], total: 0 } };
       }
       
-      return {
-        data: {
-          items: messages,
-          total: messages.length
-        }
-      };
     } catch (error) {
       console.error('获取会话消息失败:', error);
       return { data: { items: [], total: 0 } };
@@ -684,6 +1172,81 @@ export const contextApi = {
   // 获取会话的所有上下文
   getBySession: (sessionId: string) => 
     request<ApiResponse<Context[]>>(`/sessions/${sessionId}/contexts`),
+};
+
+// 实验性API - 不影响现有功能
+export const experimentalApi = {
+  // 完全独立的新函数，不修改任何现有代码
+  getAllSessionMessages: async (sessionId: string) => {
+    try {
+      console.log(`[${new Date().toISOString()}] [实验性功能] 尝试获取会话 ${sessionId} 的所有消息`);
+      
+      // 使用新的API端点
+      const response = await fetch(`${API_BASE_URL}/sessions/${sessionId}/messages`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+      });
+      
+      if (!response.ok) {
+        throw new Error(`请求失败: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      console.log(`[${new Date().toISOString()}] [实验性功能] 获取会话所有消息成功:`, data);
+      
+      return {
+        data: {
+          items: data.items || [],
+          total: data.total || 0
+        }
+      };
+    } catch (error) {
+      console.error(`[${new Date().toISOString()}] [实验性功能] 获取会话所有消息失败:`, error);
+      throw error;
+    }
+  },
+  
+  // 获取特定上下文的消息
+  getSessionContextMessages: async (sessionId: string, contextId?: string) => {
+    try {
+      console.log(`[${new Date().toISOString()}] [实验性功能] 尝试获取会话 ${sessionId} 的上下文消息，contextId=${contextId || '未指定'}`);
+      
+      // 构建URL，如果有contextId则添加参数
+      let url = `${API_BASE_URL}/sessions/${sessionId}/context_messages`;
+      if (contextId) {
+        url += `?context_id=${contextId}`;
+      }
+      
+      // 使用新的API端点
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+      });
+      
+      if (!response.ok) {
+        throw new Error(`请求失败: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      console.log(`[${new Date().toISOString()}] [实验性功能] 获取会话上下文消息成功:`, data);
+      
+      return {
+        data: {
+          items: data.items || [],
+          total: data.total || 0
+        }
+      };
+    } catch (error) {
+      console.error(`[${new Date().toISOString()}] [实验性功能] 获取会话上下文消息失败:`, error);
+      throw error;
+    }
+  }
 };
 
 // 导出所有API

@@ -1,11 +1,19 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { nanoid } from 'nanoid';
 import type { Message } from '@/types';
-import { api } from '@/api';
+import { api, experimentalApi } from '@/api';
 import toast from 'react-hot-toast';
 import { parseApiResponse } from '@/utils/apiResponse';
 import { useSessionTree } from '@/hooks/useSessionTree';
+
+// 特性标志 - 启用实验性功能
+// 设置为true可启用实验性功能，获取会话的所有消息
+const USE_EXPERIMENTAL_API = true;
+
+// 特性标志 - 启用上下文过滤功能
+// 设置为true可启用上下文过滤功能，只获取特定context的消息
+const USE_CONTEXT_FILTER_API = true;
 
 /**
  * 深挖消息Hook，用于管理深挖标签页的消息状态和发送消息
@@ -21,6 +29,8 @@ export function useDeepDiveMessages(
   activeNodeId?: string | null,
   contextRootNodeId?: string | null
 ) {
+  // 添加状态来存储所有深挖上下文
+  const [deepDiveContexts, setDeepDiveContexts] = useState<any[]>([]);
   const queryClient = useQueryClient();
   const { refetch: refetchSessionTree } = useSessionTree(sessionId || '');
   
@@ -129,20 +139,154 @@ export function useDeepDiveMessages(
     return msgs;
   };
   
+  // 获取会话的所有深挖上下文
+  const { 
+    data: allDeepDiveContexts = [], 
+    isLoading: isLoadingContexts 
+  } = useQuery<any[]>(
+    ['deepdive-contexts', sessionId],
+    async () => {
+      try {
+        // 检查会话ID
+        if (!sessionId) {
+          console.log('[useDeepDiveMessages] 会话ID为空，返回空上下文列表');
+          return [];
+        }
+        
+        console.log(`[useDeepDiveMessages] 尝试获取会话 ${sessionId} 的所有上下文`);
+        
+        // 获取会话的所有上下文
+        const contextsResponse = await api.context.getBySession(sessionId);
+        const contextList = parseApiResponse<any[]>(contextsResponse);
+        
+        // 过滤出深挖上下文（mode === 'deepdive'）
+        const deepDiveContexts = contextList.filter(ctx => ctx.mode === 'deepdive');
+        console.log(`[useDeepDiveMessages] 找到 ${deepDiveContexts.length} 个深挖上下文`);
+        
+        // 更新深挖上下文状态
+        setDeepDiveContexts(deepDiveContexts);
+        
+        return deepDiveContexts;
+      } catch (error) {
+        console.error('[useDeepDiveMessages] 获取会话的所有上下文失败:', error);
+        return [];
+      }
+    },
+    {
+      enabled: !!sessionId,
+      staleTime: 5 * 60 * 1000, // 5分钟内不重新获取
+    }
+  );
+  
   // 获取深挖上下文的消息
   const { 
     data: messages = [], 
-    isLoading, 
+    isLoading: isLoadingMessages, 
     error,
     refetch 
   } = useQuery<Message[]>(
     ['deepdive-messages', sessionId, contextId, activeNodeId, contextRootNodeId],
     async () => {
       try {
-        // 检查必要的参数
-        if (!sessionId || (!contextId && !activeNodeId && !contextRootNodeId)) {
-          console.log('[useDeepDiveMessages] 参数不足，返回空消息列表');
+        // 检查会话ID
+        if (!sessionId) {
+          console.log('[useDeepDiveMessages] 会话ID为空，返回空消息列表');
           return [];
+        }
+        
+        // 如果启用了实验性API和上下文过滤功能，并且有contextId，则使用新的API
+        if (USE_EXPERIMENTAL_API && USE_CONTEXT_FILTER_API && contextId) {
+          try {
+            console.log(`[useDeepDiveMessages] 使用实验性API获取深挖context的消息，contextId=${contextId}`);
+            const response = await experimentalApi.getSessionContextMessages(sessionId, contextId);
+            console.log(`[useDeepDiveMessages] 获取深挖context消息成功:`, response);
+            return response.data?.items || [];
+          } catch (contextError) {
+            console.error(`[useDeepDiveMessages] 获取深挖context消息失败:`, contextError);
+            // 如果获取深挖context消息失败，回退到原来的方法
+            console.log(`[useDeepDiveMessages] 回退到原来的方法获取深挖消息`);
+          }
+        }
+        
+        // 如果其他参数都为空，尝试从会话中获取根节点ID或主上下文
+        if (!contextId && !activeNodeId && !contextRootNodeId) {
+          console.log('[useDeepDiveMessages] 参数不足，尝试从会话中获取根节点ID或主上下文');
+          
+          try {
+            // 尝试获取会话详情
+            const sessionResponse = await api.session.getById(sessionId);
+            const sessionData = parseApiResponse<any>(sessionResponse);
+            
+            if (sessionData) {
+              // 尝试获取根节点ID
+              if (sessionData.root_node_id) {
+                contextRootNodeId = sessionData.root_node_id;
+                console.log(`[useDeepDiveMessages] 从会话详情中获取到根节点ID: ${contextRootNodeId}`);
+              }
+              
+              // 尝试获取主上下文
+              if (sessionData.main_context) {
+                if (!contextRootNodeId && sessionData.main_context.context_root_node_id) {
+                  contextRootNodeId = sessionData.main_context.context_root_node_id;
+                  console.log(`[useDeepDiveMessages] 从会话详情的主上下文中获取到根节点ID: ${contextRootNodeId}`);
+                }
+                
+                if (sessionData.main_context.id) {
+                  contextId = sessionData.main_context.id;
+                  console.log(`[useDeepDiveMessages] 从会话详情中获取到主上下文ID: ${contextId}`);
+                }
+                
+                if (sessionData.main_context.active_node_id) {
+                  activeNodeId = sessionData.main_context.active_node_id;
+                  console.log(`[useDeepDiveMessages] 从会话详情的主上下文中获取到活动节点ID: ${activeNodeId}`);
+                }
+              }
+            }
+          } catch (error) {
+            console.error('[useDeepDiveMessages] 获取会话详情失败:', error);
+            
+            // 尝试获取会话的上下文列表
+            try {
+              const contextsResponse = await api.context.getBySession(sessionId);
+              const contextList = parseApiResponse<any[]>(contextsResponse);
+              
+              // 找到主聊天上下文（mode === 'chat'）
+              const mainContext = contextList.find(ctx => ctx.mode === 'chat');
+              if (mainContext) {
+                contextId = mainContext.id;
+                contextRootNodeId = mainContext.context_root_node_id;
+                activeNodeId = mainContext.active_node_id;
+                console.log(`[useDeepDiveMessages] 从上下文列表中找到主上下文，id: ${contextId}, context_root_node_id: ${contextRootNodeId}, active_node_id: ${activeNodeId}`);
+              }
+            } catch (contextError) {
+              console.error('[useDeepDiveMessages] 获取会话的上下文列表失败:', contextError);
+            }
+          }
+          
+          // 如果仍然没有获取到任何参数，尝试获取会话树
+          if (!contextId && !activeNodeId && !contextRootNodeId) {
+            try {
+              const treeResponse = await api.session.getTree(sessionId, true);
+              const tree = parseApiResponse<any>(treeResponse);
+              
+              if (tree && tree.nodes && tree.nodes.length > 0) {
+                // 找到根节点（parent_id为null的节点）
+                const rootNode = tree.nodes.find((node: any) => !node.parent_id);
+                if (rootNode) {
+                  contextRootNodeId = rootNode.id;
+                  console.log(`[useDeepDiveMessages] 从会话树中找到根节点ID: ${contextRootNodeId}`);
+                }
+              }
+            } catch (treeError) {
+              console.error('[useDeepDiveMessages] 获取会话树失败:', treeError);
+            }
+          }
+          
+          // 如果仍然没有获取到任何参数，返回空消息列表
+          if (!contextId && !activeNodeId && !contextRootNodeId) {
+            console.log('[useDeepDiveMessages] 无法获取任何参数，返回空消息列表');
+            return [];
+          }
         }
         
         console.log(`[useDeepDiveMessages] 开始获取深挖消息，sessionId=${sessionId}, contextId=${contextId}, activeNodeId=${activeNodeId}, contextRootNodeId=${contextRootNodeId}`);
@@ -316,9 +460,10 @@ export function useDeepDiveMessages(
       }
     },
     {
-      enabled: !!sessionId && !!(contextId || activeNodeId || contextRootNodeId),
+      // 只有在会话ID存在时才启用查询
+      enabled: !!sessionId,
       staleTime: 1 * 60 * 1000, // 1分钟内不重新获取
-      retry: 1,
+      retry: 2, // 增加重试次数
       retryDelay: attemptIndex => Math.min(1000 * 2 ** attemptIndex, 10000),
     }
   );
@@ -569,6 +714,9 @@ export function useDeepDiveMessages(
     }
   );
   
+  // 合并加载状态
+  const isLoading = isLoadingContexts || isLoadingMessages;
+
   return {
     messages,
     isLoading,

@@ -2,12 +2,20 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { nanoid } from 'nanoid';
 import type { Message } from '@/types';
-import { api } from '@/api';
+import { api, experimentalApi } from '@/api';
 import db from '@/utils/db';
 import { useSession } from '@/store/sessionContext';
 import { useSessionTree } from '@/hooks/useSessionTree';
 import toast from 'react-hot-toast'; // 导入toast组件，如果项目中没有，需要安装
 import { parseApiResponse } from '@/utils/apiResponse';
+
+// 特性标志 - 启用实验性功能
+// 设置为true可启用实验性功能，获取会话的所有消息
+const USE_EXPERIMENTAL_API = true;
+
+// 特性标志 - 启用上下文过滤功能
+// 设置为true可启用上下文过滤功能，只获取主context的消息
+const USE_CONTEXT_FILTER_API = true;
 
 /**
  * 消息Hook，用于管理消息状态和发送消息
@@ -37,13 +45,58 @@ export function useMessages(sessionId: string) {
         
         console.log(`[${new Date().toISOString()}] 尝试获取会话 ${sessionId} 的消息`);
         
-        // 尝试从API获取消息，使用内置的重试机制
+        // 根据特性标志决定使用哪个API
+        if (USE_EXPERIMENTAL_API) {
+          try {
+            // 如果同时启用了上下文过滤功能
+            if (USE_CONTEXT_FILTER_API) {
+              console.log(`[${new Date().toISOString()}] 使用实验性API获取主context的消息`);
+              
+              // 获取主context的ID
+              let mainContextId = null;
+              try {
+                const sessionResponse = await api.session.getById(sessionId);
+                const sessionData = parseApiResponse<any>(sessionResponse);
+                if (sessionData && sessionData.main_context) {
+                  mainContextId = sessionData.main_context.id;
+                  console.log(`[${new Date().toISOString()}] 获取到主context ID: ${mainContextId}`);
+                }
+              } catch (error) {
+                console.error(`[${new Date().toISOString()}] 获取主context ID失败:`, error);
+              }
+              
+              // 如果成功获取到主context ID，使用新的API获取主context的消息
+              if (mainContextId) {
+                try {
+                  const response = await experimentalApi.getSessionContextMessages(sessionId, mainContextId);
+                  console.log(`[${new Date().toISOString()}] 获取主context消息成功:`, response);
+                  return response.data?.items || [];
+                } catch (contextError) {
+                  console.error(`[${new Date().toISOString()}] 获取主context消息失败:`, contextError);
+                  // 如果获取主context消息失败，回退到获取所有消息
+                }
+              }
+            }
+            
+            // 如果没有启用上下文过滤或者获取主context ID失败，使用原来的API获取所有消息
+            console.log(`[${new Date().toISOString()}] 使用实验性API获取所有消息`);
+            const response = await experimentalApi.getAllSessionMessages(sessionId);
+            console.log(`[${new Date().toISOString()}] 实验性API获取会话所有消息成功:`, response);
+            return response.data?.items || [];
+          } catch (experimentalError) {
+            console.error(`[${new Date().toISOString()}] 实验性API失败，回退到标准API:`, experimentalError);
+            // 回退到标准API
+          }
+        }
+        
+        // 使用标准API获取消息
         try {
+          // 如果实验性API未启用或失败，使用标准API
           const response = await api.message.getBySession(sessionId);
-          console.log(`[${new Date().toISOString()}] 获取会话消息成功:`, response);
+          console.log(`[${new Date().toISOString()}] 使用标准API获取会话消息成功:`, response);
           return response.data?.items || [];
         } catch (apiError) {
-          console.error(`[${new Date().toISOString()}] 从API获取消息失败:`, apiError);
+          console.error(`[${new Date().toISOString()}] 从标准API获取消息失败:`, apiError);
           
           // 显示更友好的错误提示
           toast.error('正在初始化新会话，请稍候...', {

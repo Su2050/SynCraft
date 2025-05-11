@@ -6,6 +6,7 @@ import { MessageRole } from '@/types';
 import { parseApiResponse } from '@/utils/apiResponse';
 import { nanoid } from 'nanoid';
 import { useDeepDiveMessages } from '@/hooks/useDeepDiveMessages';
+import { useQuery } from '@tanstack/react-query';
 
 // 定义深挖标签页类型
 export interface DeepDiveTab {
@@ -69,6 +70,9 @@ const DeepDivePanel: React.FC<DeepDivePanelProps> = ({
   // 用于跟踪是否已经处理过当前的selectedText
   const [processedText, setProcessedText] = useState<string | null>(null);
   
+  // 添加一个ref来防止重复处理
+  const processingRef = useRef(false);
+  
   // 使用useDeepDiveMessages hook获取当前活动标签页的消息，不再需要重试获取消息的函数
   
   // 添加一个工具函数，用于规范化后端返回的日期字符串，避免缺少时区信息导致的 8 小时时差
@@ -90,6 +94,8 @@ const DeepDivePanel: React.FC<DeepDivePanelProps> = ({
     return ts;
   };
   
+  // 防抖机制已移除
+
   // 监听selectedText属性的变化
   React.useEffect(() => {
     console.log('[DeepDivePanel] useEffect triggered selectedText:', selectedText, 'selectionPosition:', selectionPosition);
@@ -99,27 +105,48 @@ const DeepDivePanel: React.FC<DeepDivePanelProps> = ({
       return;
     }
     
-    // 检查是否是整体深挖
-    const isFullDeepDive = selectionPosition && (selectionPosition as any).isFullDeepDive;
-    const messageId = selectionPosition && (selectionPosition as any).messageId;
+    // 如果已经在处理中，则不重复处理
+    if (processingRef.current) {
+      console.log('[DeepDivePanel] 已经在处理中，跳过重复处理');
+      return;
+    }
+    
+    // 标记为处理中
+    processingRef.current = true;
     
     // 记录当前处理的文本，防止重复处理
     setProcessedText(selectedText);
     
-    if (isFullDeepDive) {
-      // 如果是整体深挖，使用 selectionPosition?.nodeId（如果有）作为根节点
-      const targetNodeId = selectionPosition && (selectionPosition as any).nodeId;
-      handleFullDeepDive(selectedText, targetNodeId);
-      if (onFullDeepDive) {
-        onFullDeepDive(selectedText, (selectionPosition as any)?.messageId);
-      }
-    } else {
-      // 否则，调用handleDeepDive方法
-      handleDeepDive(selectedText, selectionPosition && (selectionPosition as any).nodeId);
-    }
+    // 检查是否是整体深挖
+    const isFullDeepDive = selectionPosition && (selectionPosition as any).isFullDeepDive;
+    const targetNodeId = selectionPosition && (selectionPosition as any).nodeId;
     
-    // 调用onDeepDive回调函数
-    onDeepDive(selectedText);
+    // 使用setTimeout确保状态更新完成后再执行
+    setTimeout(async () => {
+      try {
+        if (isFullDeepDive) {
+          // 如果是整体深挖，只调用handleFullDeepDive
+          await handleFullDeepDive(selectedText, targetNodeId);
+          // 只有在handleFullDeepDive成功后才调用onFullDeepDive
+          if (onFullDeepDive) {
+            onFullDeepDive(selectedText, (selectionPosition as any)?.messageId);
+          }
+        } else {
+          // 否则，只调用handleDeepDive
+          await handleDeepDive(selectedText, targetNodeId);
+        }
+        
+        // 只有在处理成功后才调用onDeepDive
+        if (onDeepDive) {
+          onDeepDive(selectedText);
+        }
+      } catch (error) {
+        console.error('[DeepDivePanel] 处理深挖操作失败:', error);
+      } finally {
+        // 处理完成后，重置处理标志
+        processingRef.current = false;
+      }
+    }, 0);
   }, [selectedText, onDeepDive, onFullDeepDive, processedText]);
   
   // 处理文本选择
@@ -156,6 +183,8 @@ const DeepDivePanel: React.FC<DeepDivePanelProps> = ({
     // 如果提供了 overrideNodeId，则优先使用；否则使用 props 中的 nodeId 或 rootNodeId
     const contextRootNodeId = overrideNodeId || nodeId || rootNodeId || '';
 
+    console.log(`[DeepDivePanel] 创建深挖上下文，text: ${text.substring(0, 20)}..., contextRootNodeId: ${contextRootNodeId}`);
+    
     // 创建深挖上下文
     const response = await api.node.createDeepDive(contextRootNodeId, {
       session_id: sessionId || '',
@@ -174,6 +203,8 @@ const DeepDivePanel: React.FC<DeepDivePanelProps> = ({
       throw new Error('创建深挖上下文失败：响应数据为空或格式不正确');
     }
     
+    console.log(`[DeepDivePanel] 创建深挖上下文成功，id: ${deepDiveContext.id}, context_id: ${deepDiveContext.context_id}`);
+    
     return deepDiveContext;
   };
   
@@ -181,7 +212,16 @@ const DeepDivePanel: React.FC<DeepDivePanelProps> = ({
   const handleDeepDive = async (selectedText: string, targetNodeId?: string) => {
     if (!selectedText) return;
     
+    // 如果已经在发送中，则不重复处理
+    if (isDeepDiveSending) {
+      console.log('[DeepDivePanel] 已经在发送中，跳过重复处理');
+      return;
+    }
+    
+    setIsDeepDiveSending(true);
+    
     try {
+      console.log('[DeepDivePanel] 开始处理文本深挖:', selectedText.substring(0, 20));
       // 创建深挖上下文（无 overrideNodeId）
       const deepDiveContext = await createDeepDiveContext(selectedText, undefined, targetNodeId);
       
@@ -215,6 +255,9 @@ const DeepDivePanel: React.FC<DeepDivePanelProps> = ({
       
       // 将选中的文本填充到输入框中，让用户可以编辑
       setDeepDiveInputText(selectedText);
+      
+      // 手动触发重新获取深挖上下文列表
+      refetchDeepDiveContexts();
       
       // 不再自动获取QA对，因为我们不再自动创建子节点和发送初始问题
       // 等待用户主动发送问题
@@ -252,12 +295,23 @@ const DeepDivePanel: React.FC<DeepDivePanelProps> = ({
         // 将选中的文本填充到输入框中，让用户可以编辑
         setDeepDiveInputText(selectedText);
       }
+    } finally {
+      setIsDeepDiveSending(false);
     }
   };
   
   // 处理整体深挖
   const handleFullDeepDive = async (messageContent: string, targetNodeId: string | undefined) => {
+    // 如果已经在发送中，则不重复处理
+    if (isDeepDiveSending) {
+      console.log('[DeepDivePanel] 已经在发送中，跳过重复处理');
+      return;
+    }
+    
+    setIsDeepDiveSending(true);
+    
     try {
+      console.log('[DeepDivePanel] 开始处理整体深挖:', messageContent.substring(0, 20));
       // 创建深挖上下文，使用选中消息所在的节点作为根节点（如果提供）
       const deepDiveContext = await createDeepDiveContext(
         messageContent,
@@ -294,6 +348,9 @@ const DeepDivePanel: React.FC<DeepDivePanelProps> = ({
       // 将消息内容填充到输入框中，让用户可以编辑
       const userPrompt = `请深入分析并解释以下内容：\n\n${messageContent}`;
       setDeepDiveInputText(userPrompt);
+      
+      // 手动触发重新获取深挖上下文列表
+      refetchDeepDiveContexts();
       
       // 不再自动获取QA对，因为我们不再自动创建子节点和发送初始问题
       // 等待用户主动发送问题
@@ -332,6 +389,8 @@ const DeepDivePanel: React.FC<DeepDivePanelProps> = ({
         const userPrompt = `请深入分析并解释以下内容：\n\n${messageContent}`;
         setDeepDiveInputText(userPrompt);
       }
+    } finally {
+      setIsDeepDiveSending(false);
     }
   };
   
@@ -376,6 +435,70 @@ const DeepDivePanel: React.FC<DeepDivePanelProps> = ({
   // 不再需要fetchContextMessages和buildMessagesByNodeIds函数，
   // 因为我们现在使用useDeepDiveMessages hook来获取和管理消息
 
+  // 获取会话的所有深挖上下文
+  const { 
+    data: allDeepDiveContexts = [], 
+    isLoading: isLoadingContexts,
+    refetch: refetchDeepDiveContexts  // 添加refetch函数
+  } = useQuery<any[]>(
+    ['deepdive-contexts', sessionId],
+    async () => {
+      try {
+        // 检查会话ID
+        if (!sessionId) {
+          console.log('[DeepDivePanel] 会话ID为空，返回空上下文列表');
+          return [];
+        }
+        
+        console.log(`[DeepDivePanel] 尝试获取会话 ${sessionId} 的所有上下文`);
+        
+        // 获取会话的所有上下文
+        const contextsResponse = await api.context.getBySession(sessionId);
+        const contextList = parseApiResponse<any[]>(contextsResponse);
+        
+        // 过滤出深挖上下文（mode === 'deepdive'）
+        const deepDiveContexts = contextList.filter(ctx => ctx.mode === 'deepdive');
+        console.log(`[DeepDivePanel] 找到 ${deepDiveContexts.length} 个深挖上下文`);
+        
+        return deepDiveContexts;
+      } catch (error) {
+        console.error('[DeepDivePanel] 获取会话的所有上下文失败:', error);
+        return [];
+      }
+    },
+    {
+      enabled: !!sessionId,
+      staleTime: 30 * 1000,  // 减少缓存时间到30秒
+    }
+  );
+  
+  // 当获取到深挖上下文列表时，初始化深挖标签页
+  React.useEffect(() => {
+    if (allDeepDiveContexts.length > 0) {
+      console.log(`[DeepDivePanel] 获取到 ${allDeepDiveContexts.length} 个深挖上下文，初始化标签页`);
+      
+      // 将深挖上下文转换为标签页
+      const tabs = allDeepDiveContexts.map(ctx => ({
+        id: ctx.id,
+        title: ctx.source ? ctx.source.substring(0, 15) + (ctx.source.length > 15 ? '...' : '') : '深挖标签页',
+        tag: null,
+        content: null,
+        context_id: ctx.context_id,
+        context_root_node_id: ctx.context_root_node_id,
+        active_node_id: ctx.active_node_id,
+        messages: []
+      }));
+      
+      // 设置深挖标签页
+      setDeepDiveTabs(tabs);
+      
+      // 如果有标签页，设置第一个为活动标签页
+      if (tabs.length > 0) {
+        setActiveDeepDiveTab(0);
+      }
+    }
+  }, [allDeepDiveContexts]);
+  
   // 使用useDeepDiveMessages hook获取当前活动标签页的消息
   const activeTab = deepDiveTabs[activeDeepDiveTab];
   const {
@@ -453,7 +576,42 @@ const DeepDivePanel: React.FC<DeepDivePanelProps> = ({
       
       {/* 标签页内容 */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {deepDiveTabs[activeDeepDiveTab]?.messages?.map((message, idx) => (
+        {/* 加载状态 */}
+        {isLoadingMessages && (
+          <div className="h-full flex items-center justify-center text-gray-500">
+            <div className="text-center">
+              <div className="inline-block w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mb-2"></div>
+              <p>加载深挖消息中...</p>
+            </div>
+          </div>
+        )}
+        
+        {/* 没有标签页或标签页为空时显示提示 */}
+        {!isLoadingMessages && (activeDeepDiveTab === -1 || deepDiveTabs.length === 0) && (
+          <div className="h-full flex items-center justify-center text-gray-500">
+            <div className="text-center">
+              <p className="text-xl mb-2">深挖分析</p>
+              <p>选择文本并点击"深挖"按钮，或点击"+"创建新标签页</p>
+            </div>
+          </div>
+        )}
+        
+        {/* 有标签页但没有消息时显示提示 */}
+        {!isLoadingMessages && activeDeepDiveTab !== -1 && deepDiveTabs.length > 0 && 
+         (!deepDiveTabs[activeDeepDiveTab]?.messages || deepDiveTabs[activeDeepDiveTab]?.messages.length === 0) && (
+          <div className="h-full flex items-center justify-center text-gray-500">
+            <div className="text-center">
+              <p className="text-xl mb-2">开始深挖对话</p>
+              <p>在下方输入框中输入问题，开始深挖分析</p>
+            </div>
+          </div>
+        )}
+        
+        {/* 消息列表 */}
+        {!isLoadingMessages && activeDeepDiveTab !== -1 && 
+         deepDiveTabs[activeDeepDiveTab]?.messages && 
+         deepDiveTabs[activeDeepDiveTab]?.messages.length > 0 && 
+         deepDiveTabs[activeDeepDiveTab]?.messages.map((message, idx) => (
           <div
             key={`${message.id}-${idx}`}
             className={`${message.role === 'user' ? 'message-user' : 'message-assistant'} ${(message as any).isError ? 'bg-red-50 border border-red-200 rounded p-2' : ''}`}

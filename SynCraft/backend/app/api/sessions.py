@@ -48,6 +48,20 @@ class SessionListResponse(BaseModel):
 class SessionDetailResponse(SessionResponse):
     contexts: List[ContextBrief] = []
 
+class MessageResponse(BaseModel):
+    id: str
+    session_id: str
+    parent_id: Optional[str] = None
+    role: str
+    content: str
+    timestamp: datetime
+    qa_pair_id: Optional[str] = None
+    tags: Optional[List[str]] = None
+
+class SessionMessagesResponse(BaseModel):
+    total: int
+    items: List[MessageResponse]
+
 class SuccessResponse(BaseModel):
     success: bool
     message: str
@@ -573,6 +587,185 @@ def get_session_tree(
         "nodes": node_data,
         "edges": edge_data
     }
+
+@router.get("/sessions/{session_id}/messages", response_model=SessionMessagesResponse)
+def get_session_messages(
+    session_id: str,
+    db: Session = Depends(get_db_session)
+):
+    """获取会话的所有消息"""
+    # 检查会话是否存在
+    session = db.get(SessionModel, session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    # 获取会话的所有上下文
+    query = select(Context).where(Context.session_id == session_id)
+    contexts = db.exec(query).all()
+    
+    # 收集所有节点ID
+    node_ids = set()
+    
+    # 首先添加会话的根节点
+    if session.root_node_id:
+        node_ids.add(session.root_node_id)
+    
+    # 添加每个上下文的根节点和活动节点
+    for context in contexts:
+        if context.context_root_node_id:
+            node_ids.add(context.context_root_node_id)
+        if context.active_node_id:
+            node_ids.add(context.active_node_id)
+    
+    # 获取上下文中的所有节点
+    for context in contexts:
+        query = select(ContextNode).where(ContextNode.context_id == context.id)
+        context_nodes = db.exec(query).all()
+        for context_node in context_nodes:
+            node_ids.add(context_node.node_id)
+    
+    # 获取会话的所有节点
+    query = select(Node).where(Node.session_id == session_id)
+    nodes = db.exec(query).all()
+    for node in nodes:
+        node_ids.add(node.id)
+    
+    # 获取所有节点的QA对
+    all_messages = []
+    
+    for node_id in node_ids:
+        # 获取节点的QA对
+        query = select(QAPair).where(QAPair.node_id == node_id)
+        qa_pairs = db.exec(query).all()
+        
+        for qa_pair in qa_pairs:
+            # 获取QA对的消息
+            query = select(Message).where(Message.qa_pair_id == qa_pair.id)
+            messages = db.exec(query).all()
+            
+            for message in messages:
+                all_messages.append(MessageResponse(
+                    id=message.id,
+                    session_id=session_id,
+                    parent_id=node_id,
+                    role=message.role,
+                    content=message.content,
+                    timestamp=message.timestamp,
+                    qa_pair_id=qa_pair.id,
+                    tags=qa_pair.tags
+                ))
+    
+    # 按时间戳排序
+    all_messages.sort(key=lambda x: x.timestamp)
+    
+    return SessionMessagesResponse(
+        total=len(all_messages),
+        items=all_messages
+    )
+
+@router.get("/sessions/{session_id}/context_messages", response_model=SessionMessagesResponse)
+def get_session_context_messages(
+    session_id: str,
+    context_id: Optional[str] = None,
+    db: Session = Depends(get_db_session)
+):
+    """
+    获取会话中特定上下文的所有消息
+    
+    如果提供了context_id，则只返回该context的消息
+    否则，返回主context（mode='chat'）的消息
+    """
+    # 检查会话是否存在
+    session = db.get(SessionModel, session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    # 获取目标上下文
+    target_context = None
+    if context_id:
+        # 如果提供了context_id，则获取该上下文
+        target_context = db.get(Context, context_id)
+        if not target_context:
+            raise HTTPException(status_code=404, detail="Context not found")
+    else:
+        # 否则，获取主聊天上下文（mode='chat'）
+        query = select(Context).where(
+            Context.session_id == session_id,
+            Context.mode == "chat"
+        )
+        target_context = db.exec(query).first()
+        if not target_context:
+            raise HTTPException(status_code=404, detail="Main context not found")
+    
+    # 收集目标上下文的所有节点ID
+    node_ids = set()
+    
+    # 添加上下文的根节点和活动节点
+    if target_context.context_root_node_id:
+        node_ids.add(target_context.context_root_node_id)
+    if target_context.active_node_id:
+        node_ids.add(target_context.active_node_id)
+    
+    # 获取上下文中的所有节点
+    query = select(ContextNode).where(ContextNode.context_id == target_context.id)
+    context_nodes = db.exec(query).all()
+    for context_node in context_nodes:
+        node_ids.add(context_node.node_id)
+    
+    # 获取从根节点到活动节点的路径上的所有节点
+    if target_context.context_root_node_id and target_context.active_node_id:
+        # 获取会话的所有节点
+        query = select(Node).where(Node.session_id == session_id)
+        all_nodes = db.exec(query).all()
+        
+        # 创建节点的父节点映射
+        parent_map = {}
+        for node in all_nodes:
+            if node.parent_id:
+                parent_map[node.id] = node.parent_id
+        
+        # 从活动节点开始，向上查找到根节点
+        current_id = target_context.active_node_id
+        while current_id and current_id != target_context.context_root_node_id:
+            # 添加当前节点到node_ids
+            node_ids.add(current_id)
+            # 获取父节点
+            current_id = parent_map.get(current_id)
+            if not current_id:
+                break
+    
+    # 获取所有节点的QA对
+    all_messages = []
+    
+    for node_id in node_ids:
+        # 获取节点的QA对
+        query = select(QAPair).where(QAPair.node_id == node_id)
+        qa_pairs = db.exec(query).all()
+        
+        for qa_pair in qa_pairs:
+            # 获取QA对的消息
+            query = select(Message).where(Message.qa_pair_id == qa_pair.id)
+            messages = db.exec(query).all()
+            
+            for message in messages:
+                all_messages.append(MessageResponse(
+                    id=message.id,
+                    session_id=session_id,
+                    parent_id=node_id,
+                    role=message.role,
+                    content=message.content,
+                    timestamp=message.timestamp,
+                    qa_pair_id=qa_pair.id,
+                    tags=qa_pair.tags
+                ))
+    
+    # 按时间戳排序
+    all_messages.sort(key=lambda x: x.timestamp)
+    
+    return SessionMessagesResponse(
+        total=len(all_messages),
+        items=all_messages
+    )
 
 @router.get("/sessions/{session_id}/main_context", response_model=Context)
 def get_main_context(

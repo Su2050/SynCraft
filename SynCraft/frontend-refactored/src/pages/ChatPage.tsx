@@ -15,7 +15,14 @@ import { Message, MessageRole } from '@/types';
  */
 export default function ChatPage() {
   const { id: sessionId, nodeId = undefined } = useParams<{ id: string; nodeId?: string }>();
-  const { activeSession, rootNodeId, mainContextId } = useSession();
+  const { activeSession, rootNodeId, mainContextId, setActiveSessionId } = useSession();
+  
+  // 确保在组件加载时正确设置activeSessionId
+  useEffect(() => {
+    if (sessionId) {
+      setActiveSessionId(sessionId);
+    }
+  }, [sessionId, setActiveSessionId]);
   const { messages, isLoading, error, sendMessage } = useMessages(sessionId || '');
   const { refetch: refetchSessionTree } = useSessionTree(sessionId || '');
   

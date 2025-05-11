@@ -134,10 +134,11 @@ export default function SessionList() {
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {sessions.map(session => (
-            <div 
-              key={session.id} 
-              className="card hover:shadow-md transition-shadow cursor-pointer"
-            >
+              <div 
+                key={session.id} 
+                className="card hover:shadow-md transition-shadow cursor-pointer"
+                onClick={() => handleSessionClick(session.id)}
+              >
               {editingSessionId === session.id ? (
                 <form onSubmit={(e) => handleRenameSession(e, session.id)} className="flex gap-2">
                   <input
@@ -163,12 +164,11 @@ export default function SessionList() {
                 <>
                   <div 
                     className="mb-2 font-semibold"
-                    onClick={() => handleSessionClick(session.id)}
                   >
                     {session.name}
                   </div>
                   <div className="text-sm text-gray-500 mb-4">
-                    创建于 {new Date(session.createdAt).toLocaleString()}
+                    创建于 {new Date(session.created_at).toLocaleString()}
                   </div>
                   <div className="flex justify-end gap-2">
                     <button 

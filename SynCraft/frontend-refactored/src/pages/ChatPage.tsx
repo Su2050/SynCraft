@@ -10,6 +10,25 @@ import { api } from '@/api';
 import toast from 'react-hot-toast';
 import { Message, MessageRole } from '@/types';
 
+// 添加规范化时间戳函数，与DeepDivePanel.tsx中的函数保持一致
+const normalizeTimestamp = (ts: number | string): number | string => {
+  // 如果本身就是数字或者为空，直接返回
+  if (typeof ts === 'number' || !ts) return ts;
+
+  // 如果已经包含时区标识（Z / +hh:mm / -hh:mm），无需处理
+  if (/Z$|[+-]\d{2}:\d{2}$/.test(ts)) {
+    return ts;
+  }
+
+  // 如果看起来是 ISO 字符串但缺少 Z，默认按 UTC 处理，在末尾补 Z
+  if (ts.includes('T')) {
+    return `${ts}Z`;
+  }
+
+  // 其他情况直接返回原值
+  return ts;
+};
+
 /**
  * 聊天页面
  */
@@ -104,7 +123,7 @@ export default function ChatPage() {
    * 处理用户在消息中选择文本
    * @param nodeId 选中文本所属消息对应的节点 ID
    */
-  const handleTextSelection = (nodeId?: string) => {
+  const handleTextSelection = (nodeId?: string | null) => {
     const selection = window.getSelection();
     if (selection && !selection.isCollapsed) {
       setSelectedText(selection.toString());
@@ -174,14 +193,14 @@ export default function ChatPage() {
               <div
                 key={message.id}
                 className={message.role === 'user' ? 'message-user' : 'message-assistant'}
-                onMouseUp={() => handleTextSelection(message.parent_id || undefined)}
+                onMouseUp={() => handleTextSelection(message.parent_id ?? rootNodeId)}
                 onMouseEnter={() => setHoveredMessageId(message.id)}
                 onMouseLeave={() => setHoveredMessageId(null)}
                 style={{ position: 'relative' }}
               >
                 <div className="flex justify-between items-start mb-1">
                   <span className="text-xs text-gray-500">
-                    {new Date(message.timestamp).toLocaleString()}
+                    {new Date(normalizeTimestamp(message.timestamp)).toLocaleString()}
                   </span>
                   <div className="flex items-center space-x-2">
                     {message.role === 'assistant' && hoveredMessageId === message.id && (
@@ -193,12 +212,14 @@ export default function ChatPage() {
                           // 所以我们可以通过设置selectedText和触发点击深挖按钮来实现
                           setSelectedText(message.content);
                           // 设置一个特殊的位置，表示这是整体深挖
+                          // 使用parent_id作为nodeId，因为parent_id是有效的节点ID
+                          // 而qa_pair_id是QA对ID，不是有效的节点ID
                           setSelectionPosition({
                             x: 0,
                             y: 0,
                             isFullDeepDive: true,
                             messageId: message.id,
-                            nodeId: message.parent_id || undefined
+                            nodeId: message.parent_id ?? rootNodeId
                           } as any);
                         }}
                         aria-label="深挖整体内容"

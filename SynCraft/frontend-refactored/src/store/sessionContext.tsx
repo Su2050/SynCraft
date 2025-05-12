@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import type { Session } from '@/types';
 import { api } from '@/api';
 import db from '@/utils/db';
@@ -31,6 +31,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [mainContextId, setMainContextId] = useState<string | null>(null);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const location = useLocation();
+  const isChangePasswordPage = location.pathname === '/change-password';
   
   // 获取所有会话
   const { 
@@ -40,6 +42,14 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   } = useQuery<Session[], Error>(
     ['sessions'],
     async () => {
+      // 检查用户是否已登录
+      const token = localStorage.getItem('token');
+      if (!token) {
+        // 如果未登录，返回空数组
+        console.log(`[${new Date().toISOString()}] 用户未登录，不获取会话列表`);
+        return [];
+      }
+      
       try {
         // 尝试从API获取会话
         const response = await api.session.getAll();
@@ -60,6 +70,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     },
     {
       staleTime: 5 * 60 * 1000, // 5分钟内不重新获取
+      // 添加 enabled 选项，只有在有 token 时且不在修改密码页面才启用查询
+      enabled: !!localStorage.getItem('token') && !isChangePasswordPage,
       onSuccess: (data) => {
         // 如果没有活动会话但有会话数据，设置第一个会话为活动会话
         if (!activeSessionId && data.length > 0) {

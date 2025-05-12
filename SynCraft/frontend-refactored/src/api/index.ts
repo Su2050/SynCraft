@@ -233,10 +233,19 @@ async function request<T>(
   console.log(`[${new Date().toISOString()}] 本地模式状态:`, isLocalMode());
   console.log(`[${new Date().toISOString()}] API基础URL:`, API_BASE_URL);
   
-  const headers = {
+  // 获取认证令牌
+  const token = localStorage.getItem('token');
+  
+  // 创建请求头对象，确保类型为 Record<string, string>
+  const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    ...options.headers,
+    ...(options.headers as Record<string, string> || {})
   };
+  
+  // 如果有令牌，添加到请求头
+  if (token && !(options.headers as Record<string, string>)?.['Authorization']) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
   
   try {
     const response = await fetch(url, {
@@ -274,7 +283,18 @@ async function request<T>(
 export const sessionApi = {
   // 获取所有会话
   getAll: async () => {
-    const response = await request<{ total: number, items: Session[] }>('/sessions');
+    // 获取认证令牌
+    const token = localStorage.getItem('token');
+    if (!token) {
+      console.log(`[${new Date().toISOString()}] 获取会话列表失败：未找到认证令牌`);
+      return [];
+    }
+    
+    const response = await request<{ total: number, items: Session[] }>('/sessions', {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
     return response.items;
   },
   
@@ -1181,26 +1201,17 @@ export const experimentalApi = {
     try {
       console.log(`[${new Date().toISOString()}] [实验性功能] 尝试获取会话 ${sessionId} 的所有消息`);
       
+      // 使用request函数，它会自动添加认证令牌
+      const endpoint = `/sessions/${sessionId}/messages`;
+      
       // 使用新的API端点
-      const response = await fetch(`${API_BASE_URL}/sessions/${sessionId}/messages`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-      });
-      
-      if (!response.ok) {
-        throw new Error(`请求失败: ${response.status}`);
-      }
-      
-      const data = await response.json();
+      const data = await request<{ items: Message[], total: number }>(endpoint);
       console.log(`[${new Date().toISOString()}] [实验性功能] 获取会话所有消息成功:`, data);
       
       return {
         data: {
-          items: data.items || [],
-          total: data.total || 0
+          items: data?.items || [],
+          total: data?.total || 0
         }
       };
     } catch (error) {
@@ -1214,32 +1225,17 @@ export const experimentalApi = {
     try {
       console.log(`[${new Date().toISOString()}] [实验性功能] 尝试获取会话 ${sessionId} 的上下文消息，contextId=${contextId || '未指定'}`);
       
-      // 构建URL，如果有contextId则添加参数
-      let url = `${API_BASE_URL}/sessions/${sessionId}/context_messages`;
-      if (contextId) {
-        url += `?context_id=${contextId}`;
-      }
+      // 使用request函数，它会自动添加认证令牌
+      const endpoint = `/sessions/${sessionId}/context_messages${contextId ? `?context_id=${contextId}` : ''}`;
       
       // 使用新的API端点
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-      });
-      
-      if (!response.ok) {
-        throw new Error(`请求失败: ${response.status}`);
-      }
-      
-      const data = await response.json();
+      const data = await request<{ items: Message[], total: number }>(endpoint);
       console.log(`[${new Date().toISOString()}] [实验性功能] 获取会话上下文消息成功:`, data);
       
       return {
         data: {
-          items: data.items || [],
-          total: data.total || 0
+          items: data?.items || [],
+          total: data?.total || 0
         }
       };
     } catch (error) {
@@ -1249,6 +1245,9 @@ export const experimentalApi = {
   }
 };
 
+// 导入认证相关API
+import { authApi, adminApi } from './auth';
+
 // 导出所有API
 export const api = {
   session: sessionApi,
@@ -1256,6 +1255,8 @@ export const api = {
   node: nodeApi,
   deepDive: deepDiveApi,
   context: contextApi,
+  auth: authApi,
+  admin: adminApi,
 };
 
 export default api;

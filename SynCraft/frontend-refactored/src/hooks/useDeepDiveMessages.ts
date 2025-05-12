@@ -8,7 +8,7 @@ import { parseApiResponse } from '@/utils/apiResponse';
 import { useSessionTree } from '@/hooks/useSessionTree';
 
 // 特性标志 - 启用实验性功能
-// 设置为true可启用实验性功能，获取会话的所有消息
+// 设置为true可启用实验性功能，获取会话的所有消息，该功能已经被验证是可行的
 const USE_EXPERIMENTAL_API = true;
 
 // 特性标志 - 启用上下文过滤功能
@@ -198,7 +198,25 @@ export function useDeepDiveMessages(
         if (USE_EXPERIMENTAL_API && USE_CONTEXT_FILTER_API && contextId) {
           try {
             console.log(`[useDeepDiveMessages] 使用实验性API获取深挖context的消息，contextId=${contextId}`);
-            const response = await experimentalApi.getSessionContextMessages(sessionId, contextId);
+            
+            // 如果contextId以"deepdive-"开头，先获取真实的上下文ID
+            let realContextId = contextId;
+            if (contextId.startsWith('deepdive-')) {
+              try {
+                console.log(`[useDeepDiveMessages] contextId包含deepdive-前缀，尝试获取真实的上下文ID`);
+                const contextResponse = await api.context.getByContextId(contextId);
+                const contextData = parseApiResponse<any>(contextResponse);
+                if (contextData && contextData.id) {
+                  realContextId = contextData.id;
+                  console.log(`[useDeepDiveMessages] 获取到真实的上下文ID: ${realContextId}`);
+                }
+              } catch (contextIdError) {
+                console.error(`[useDeepDiveMessages] 获取真实上下文ID失败:`, contextIdError);
+                // 如果获取真实上下文ID失败，继续使用原始contextId
+              }
+            }
+            
+            const response = await experimentalApi.getSessionContextMessages(sessionId, realContextId);
             console.log(`[useDeepDiveMessages] 获取深挖context消息成功:`, response);
             return response.data?.items || [];
           } catch (contextError) {

@@ -517,11 +517,12 @@ const DeepDivePanel: React.FC<DeepDivePanelProps> = ({
     if (activeDeepDiveTab >= 0 && deepDiveMessages.length > 0) {
       console.log(`[DeepDivePanel] 使用useDeepDiveMessages获取到 ${deepDiveMessages.length} 条消息，更新标签页`);
       
-      // 获取最后一条消息的节点ID，用于更新活动节点ID
-      const lastMessage = deepDiveMessages[deepDiveMessages.length - 1];
-      const lastNodeId = lastMessage?.qa_pair_id || lastMessage?.parent_id;
-      
-      console.log(`[DeepDivePanel] 最后一条消息的节点ID: ${lastNodeId}`);
+    // 获取最后一条消息的节点ID，用于更新活动节点ID
+    const lastMessage = deepDiveMessages[deepDiveMessages.length - 1];
+    // 只使用parent_id，不使用qa_pair_id，因为qa_pair_id是QA对ID而不是节点ID
+    const lastNodeId = lastMessage?.parent_id;
+    
+    console.log(`[DeepDivePanel] 最后一条消息的节点ID(parent_id): ${lastNodeId}`);
       
       setDeepDiveTabs(prev => {
         const updated = [...prev];

@@ -14,6 +14,8 @@ from app.models.context_node import ContextNode
 from app.models.qapair import QAPair
 from app.models.message import Message
 from app.di.container import get_session_service
+from app.core.security import get_current_user
+from app.models.user import User
 
 router = APIRouter()
 
@@ -70,12 +72,16 @@ class SuccessResponse(BaseModel):
 @router.post("/sessions", response_model=SessionResponse)
 def create_session(
     session_data: SessionCreate,
-    session_service = Depends(get_session_service)
+    session_service = Depends(get_session_service),
+    current_user: User = Depends(get_current_user)
 ):
     """创建新会话"""
+    # 使用当前登录用户的用户名作为user_id
+    user_id = current_user.username
+    
     result = session_service.create_session(
         name=session_data.name,
-        user_id=session_data.user_id
+        user_id=user_id
     )
     
     # 返回会话信息，包括main_context
@@ -101,15 +107,17 @@ def create_session(
 
 @router.get("/sessions", response_model=SessionListResponse)
 def get_sessions(
-    user_id: str = "local",
     limit: int = 10,
     offset: int = 0,
     sort_by: str = "created_at",
     sort_order: str = "desc",
     session_service = Depends(get_session_service),
-    db: Session = Depends(get_db_session)
+    db: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user)
 ):
     """获取会话列表"""
+    # 使用当前登录用户的用户名作为user_id
+    user_id = current_user.username
     # 检查是否在测试环境中
     import os
     if os.environ.get("TESTING") == "true":
@@ -224,7 +232,8 @@ def get_sessions(
 def get_session(
     session_id: str,
     db: Session = Depends(get_db_session),
-    session_service = Depends(get_session_service)
+    session_service = Depends(get_session_service),
+    current_user: User = Depends(get_current_user)
 ):
     """获取会话详情"""
     # 检查是否在测试环境中
@@ -244,6 +253,10 @@ def get_session(
                 session_id = session.id
             else:
                 raise HTTPException(status_code=404, detail="Session not found")
+        
+        # 检查会话是否属于当前用户
+        if session.user_id != current_user.username:
+            raise HTTPException(status_code=403, detail="You don't have permission to access this session")
         
         # 查询上下文
         query = select(Context).where(Context.session_id == session_id)
@@ -291,6 +304,10 @@ def get_session(
         if not result:
             raise HTTPException(status_code=404, detail="Session not found")
         
+        # 检查会话是否属于当前用户
+        if result["user_id"] != current_user.username:
+            raise HTTPException(status_code=403, detail="You don't have permission to access this session")
+        
         # 构建响应
         context_briefs = [
             ContextBrief(
@@ -332,7 +349,8 @@ def update_session(
     session_id: str,
     session_data: SessionUpdate,
     db: Session = Depends(get_db_session),
-    session_service = Depends(get_session_service)
+    session_service = Depends(get_session_service),
+    current_user: User = Depends(get_current_user)
 ):
     """更新会话"""
     # 检查是否在测试环境中
@@ -388,6 +406,17 @@ def update_session(
         )
     else:
         # 非测试环境，使用服务层
+        # 首先获取会话信息，检查权限
+        session_info = session_service.get_session(session_id)
+        
+        if not session_info:
+            raise HTTPException(status_code=404, detail="Session not found")
+        
+        # 检查会话是否属于当前用户
+        if session_info["user_id"] != current_user.username:
+            raise HTTPException(status_code=403, detail="You don't have permission to update this session")
+        
+        # 更新会话
         session = session_service.update_session(
             session_id=session_id,
             name=session_data.name
@@ -427,7 +456,8 @@ def update_session(
 def delete_session(
     session_id: str,
     db: Session = Depends(get_db_session),
-    session_service = Depends(get_session_service)
+    session_service = Depends(get_session_service),
+    current_user: User = Depends(get_current_user)
 ):
     """删除会话"""
     # 检查是否在测试环境中
@@ -480,6 +510,17 @@ def delete_session(
         )
     else:
         # 非测试环境，使用服务层
+        # 首先获取会话信息，检查权限
+        session = session_service.get_session(session_id)
+        
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+        
+        # 检查会话是否属于当前用户
+        if session["user_id"] != current_user.username:
+            raise HTTPException(status_code=403, detail="You don't have permission to delete this session")
+        
+        # 删除会话
         success = session_service.delete_session(session_id)
         
         if not success:
@@ -494,7 +535,8 @@ def delete_session(
 def get_session_tree(
     session_id: str,
     include_qa: bool = False,
-    db: Session = Depends(get_db_session)
+    db: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user)
 ):
     """获取会话树"""
     # 检查是否在测试环境中
@@ -519,6 +561,10 @@ def get_session_tree(
         session = db.get(SessionModel, session_id)
         if not session:
             raise HTTPException(status_code=404, detail="Session not found")
+        
+        # 检查会话是否属于当前用户
+        if session.user_id != current_user.username:
+            raise HTTPException(status_code=403, detail="You don't have permission to access this session")
     
     # 查询节点
     query = select(Node).where(Node.session_id == session_id)
@@ -591,13 +637,18 @@ def get_session_tree(
 @router.get("/sessions/{session_id}/messages", response_model=SessionMessagesResponse)
 def get_session_messages(
     session_id: str,
-    db: Session = Depends(get_db_session)
+    db: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user)
 ):
     """获取会话的所有消息"""
     # 检查会话是否存在
     session = db.get(SessionModel, session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
+    
+    # 检查会话是否属于当前用户
+    if session.user_id != current_user.username:
+        raise HTTPException(status_code=403, detail="You don't have permission to access this session")
     
     # 获取会话的所有上下文
     query = select(Context).where(Context.session_id == session_id)
@@ -667,7 +718,8 @@ def get_session_messages(
 def get_session_context_messages(
     session_id: str,
     context_id: Optional[str] = None,
-    db: Session = Depends(get_db_session)
+    db: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user)
 ):
     """
     获取会话中特定上下文的所有消息
@@ -771,7 +823,8 @@ def get_session_context_messages(
 def get_main_context(
     session_id: str,
     db: Session = Depends(get_db_session),
-    session_service = Depends(get_session_service)
+    session_service = Depends(get_session_service),
+    current_user: User = Depends(get_current_user)
 ):
     """获取会话的主聊天上下文"""
     # 检查是否在测试环境中
@@ -792,6 +845,10 @@ def get_main_context(
             else:
                 raise HTTPException(status_code=404, detail="Session not found")
         
+        # 检查会话是否属于当前用户
+        if session.user_id != current_user.username:
+            raise HTTPException(status_code=403, detail="You don't have permission to access this session")
+        
         # 查询主聊天上下文
         query = select(Context).where(
             Context.session_id == session_id,
@@ -805,6 +862,17 @@ def get_main_context(
         return context
     else:
         # 非测试环境，使用服务层
+        # 首先获取会话信息，检查权限
+        session_info = session_service.get_session(session_id)
+        
+        if not session_info:
+            raise HTTPException(status_code=404, detail="Session not found")
+        
+        # 检查会话是否属于当前用户
+        if session_info["user_id"] != current_user.username:
+            raise HTTPException(status_code=403, detail="You don't have permission to access this session")
+        
+        # 获取主上下文
         context = session_service.get_main_context(session_id)
         
         if not context:

@@ -5,6 +5,11 @@ python-dotenv==1.1.0   # 若本来已写，可保留
 sqlmodel==0.0.16
 nanoid==2.0.0
 
+# ─────────── 账号管理系统依赖 ───────────
+passlib[bcrypt]==1.7.4
+python-jose[cryptography]==3.3.0
+python-multipart==0.0.6
+
 # ─────────── Day 8: spaCy NER ───────────
 spacy==3.7.2
 # 预下载模型 wheel，避免容器里再跑 `python -m spacy download`

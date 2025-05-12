@@ -2,6 +2,25 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSession } from '@/store/sessionContext';
 
+// 添加规范化时间戳函数，与ChatPage.tsx和DeepDivePanel.tsx中的函数保持一致
+const normalizeTimestamp = (ts: number | string): number | string => {
+  // 如果本身就是数字或者为空，直接返回
+  if (typeof ts === 'number' || !ts) return ts;
+
+  // 如果已经包含时区标识（Z / +hh:mm / -hh:mm），无需处理
+  if (/Z$|[+-]\d{2}:\d{2}$/.test(ts)) {
+    return ts;
+  }
+
+  // 如果看起来是 ISO 字符串但缺少 Z，默认按 UTC 处理，在末尾补 Z
+  if (ts.includes('T')) {
+    return `${ts}Z`;
+  }
+
+  // 其他情况直接返回原值
+  return ts;
+};
+
 /**
  * 会话列表页面
  */
@@ -168,7 +187,7 @@ export default function SessionList() {
                     {session.name}
                   </div>
                   <div className="text-sm text-gray-500 mb-4">
-                    创建于 {new Date(session.created_at).toLocaleString()}
+                    创建于 {new Date(normalizeTimestamp(session.created_at)).toLocaleString()}
                   </div>
                   <div className="flex justify-end gap-2">
                     <button 

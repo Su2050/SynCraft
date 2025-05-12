@@ -88,3 +88,17 @@ code {
 .animate-spin {
   animation: spin 1s linear infinite;
 }
+
+/* 禁用React标志（小花） */
+.input::before,
+.input::after,
+textarea::before,
+textarea::after {
+  display: none !important;
+}
+
+/* 更具体地针对输入框 */
+form textarea::before,
+form textarea::after {
+  display: none !important;
+}

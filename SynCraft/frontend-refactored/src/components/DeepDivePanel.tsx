@@ -492,9 +492,9 @@ const DeepDivePanel: React.FC<DeepDivePanelProps> = ({
       // 设置深挖标签页
       setDeepDiveTabs(tabs);
       
-      // 如果有标签页，设置第一个为活动标签页
+      // 如果有标签页，设置最后一个为活动标签页（最新创建的）
       if (tabs.length > 0) {
-        setActiveDeepDiveTab(0);
+        setActiveDeepDiveTab(tabs.length - 1);
       }
     }
   }, [allDeepDiveContexts]);

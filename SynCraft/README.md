@@ -1,226 +1,243 @@
 # SynCraft
 
-SynCraft是一个知识图谱构建和问答系统，通过可视化的方式帮助用户构建、管理和查询知识图谱。系统支持多会话管理、节点树形结构、上下文感知的问答等功能。
+SynCraft是一个智能对话系统，支持会话管理、上下文感知和知识图谱构建。
 
-## 项目架构
+## 项目概述
 
-SynCraft采用前后端分离的架构：
+SynCraft系统由前端和后端两部分组成，提供了丰富的功能，包括：
 
-### 后端架构
+- 会话管理：创建、查询、更新和删除会话
+- 节点管理：构建会话树结构
+- QA对管理：存储和管理问答对
+- 上下文管理：维护对话上下文
+- 搜索功能：全文搜索会话、节点和QA对
+- LLM服务：集成大型语言模型
+- 用户认证：JWT认证和授权
+- WebSocket支持：实时通信
 
-- **技术栈**：Python + FastAPI
-- **数据库**：PostgreSQL
-- **主要模块**：
-  - 会话管理（Session Management）
-  - 节点管理（Node Management）
-  - 问答对管理（QA Pair Management）
-  - 上下文管理（Context Management）
-  - 搜索服务（Search Service）
-  - LLM集成（LLM Integration）
+## 系统架构
 
-### 前端架构
+### 前端
 
-- **技术栈**：TypeScript + React
-- **状态管理**：Zustand
-- **UI组件**：React Flow（节点可视化）
-- **主要模块**：
-  - API客户端层（API Client Layer）
-  - 仓储层（Repository Layer）
-  - 状态管理层（Store Layer）
-  - UI组件层（UI Component Layer）
+前端使用React + TypeScript + Vite构建，主要组件包括：
 
-## 数据流架构
+- 会话列表页面
+- 聊天页面
+- 用户管理页面
+- 树状视图组件
+- 深度探索面板
 
-SynCraft采用分层架构，数据流如下：
+### 后端
 
-1. **UI层**（React组件）：用户界面，处理用户交互
-2. **Store层**（Zustand状态管理）：管理应用状态
-3. **仓储层**（Repository）：处理数据持久化和缓存
-4. **API客户端层**（API Client）：与后端API通信
-5. **后端API**：处理业务逻辑和数据存储
+后端使用Python + FastAPI构建，主要模块包括：
 
-## 特性
+- API接口层：处理HTTP请求和响应
+- 服务层：实现业务逻辑
+- 模型层：定义数据结构和关系
+- 数据库层：数据存储和查询
+- LLM服务层：集成大语言模型
+- 缓存层：提高性能
 
-- **多会话管理**：支持创建、切换、删除多个会话
-- **节点树形结构**：以树形结构组织知识节点
-- **上下文感知的问答**：基于节点上下文进行问答
-- **离线支持**：支持在离线状态下工作，网络恢复后自动同步
-- **数据一致性**：使用事务机制确保数据一致性
-- **错误处理**：完善的错误处理和恢复机制
-- **缓存策略**：多级缓存策略，提高性能
+#### 核心概念
 
-## 安装指南
+- **会话 (Session)**: 用户与系统交互的顶层容器，包含多个节点和上下文
+- **节点 (Node)**: 对话的基本单位，可以包含多个问答对，形成树状结构
+- **边 (Edge)**: 表示节点之间的关系，通常是从父节点到子节点的有向边
+- **上下文 (Context)**: 定义当前对话的范围和焦点
+- **上下文节点关系 (ContextNode)**: 定义上下文中包含的节点及其关系类型
+- **问答对 (QAPair)**: 用户提问和系统回答的组合，属于特定节点
+- **消息 (Message)**: 问答对中的具体内容，包括用户消息和系统消息
+- **LLM服务 (LLM Service)**: 提供与大语言模型的集成
+- **用户 (User)**: 系统的使用者，拥有自己的身份认证和权限
 
-### 环境要求
+## 快速开始
 
-- Node.js 16+
-- Python 3.9+
-- PostgreSQL 13+
+### 本地开发环境设置
 
-### 后端安装
+请参考[LOCAL_SETUP.md](./LOCAL_SETUP.md)文件了解如何设置本地开发环境。
 
-1. 克隆仓库
-   ```bash
-   git clone https://github.com/yourusername/SynCraft.git
-   cd SynCraft
-   ```
+### 使用Docker部署
 
-2. 创建并激活Python虚拟环境
-   ```bash
-   cd backend
-   python -m venv venv
-   source venv/bin/activate  # Linux/Mac
-   # 或
-   venv\Scripts\activate  # Windows
-   ```
+1. 复制环境变量文件并根据需要修改：
 
-3. 安装依赖
-   ```bash
-   pip install -r requirements.txt
-   ```
+```bash
+cp .env.example .env
+```
 
-4. 配置环境变量
-   ```bash
-   cp .env.example .env
-   # 编辑.env文件，设置数据库连接等配置
-   ```
+2. 使用Docker Compose启动服务：
 
-5. 初始化数据库
-   ```bash
-   python init_db.py
-   ```
+```bash
+docker-compose up -d
+```
 
-6. 启动后端服务
-   ```bash
-   uvicorn app.main:app --reload
-   ```
+## API文档
 
-### 前端安装
-
-1. 进入前端目录
-   ```bash
-   cd frontend
-   ```
-
-2. 安装依赖
-   ```bash
-   npm install
-   ```
-
-3. 启动开发服务器
-   ```bash
-   npm run dev
-   ```
-
-## 使用指南
-
-### 创建会话
-
-1. 点击左侧边栏的"+"按钮
-2. 输入会话名称
-3. 点击"创建"按钮
-
-### 添加节点
-
-1. 选择一个会话
-2. 点击节点上的"+"按钮
-3. 输入问题
-4. 系统会自动生成回答并创建新节点
-
-### 查看节点详情
-
-1. 点击节点
-2. 右侧面板会显示节点详情，包括问题和回答
-
-### 搜索
-
-1. 在顶部搜索框输入关键词
-2. 系统会搜索相关节点和问答对
-3. 点击搜索结果可以跳转到对应节点
+详细的API文档请参考[SynCraft API规范文档](./backend/docs/SynCraft%20API规范文档.md)。
 
 ## 项目结构
 
 ```
 SynCraft/
-├── backend/                # 后端代码
-│   ├── app/                # 应用代码
-│   │   ├── api/            # API端点
-│   │   ├── models/         # 数据模型
-│   │   ├── services/       # 业务逻辑
-│   │   ├── database/       # 数据库连接
-│   │   ├── utils/          # 工具函数
-│   │   └── main.py         # 应用入口
-│   ├── docs/               # 文档
-│   └── requirements.txt    # 依赖列表
-│
-├── frontend/               # 前端代码
-│   ├── src/                # 源代码
-│   │   ├── api/            # API客户端
-│   │   ├── components/     # React组件
-│   │   ├── hooks/          # React钩子
-│   │   ├── repositories/   # 数据仓储
-│   │   ├── store/          # 状态管理
-│   │   ├── types/          # TypeScript类型
-│   │   └── utils/          # 工具函数
-│   ├── public/             # 静态资源
-│   └── package.json        # 依赖配置
-│
-├── docker-compose.yml      # Docker配置
-└── README.md               # 项目说明
+├── frontend-refactored/     # 前端代码
+│   ├── src/                 # 源代码
+│   │   ├── api/             # API调用
+│   │   ├── components/      # 组件
+│   │   ├── hooks/           # 自定义钩子
+│   │   ├── pages/           # 页面
+│   │   ├── store/           # 状态管理
+│   │   ├── types/           # 类型定义
+│   │   └── utils/           # 工具函数
+│   └── public/              # 静态资源
+└── backend/                 # 后端代码
+    ├── app/                 # 应用代码
+    │   ├── api/             # API接口
+    │   ├── cache/           # 缓存管理
+    │   ├── core/            # 核心功能
+    │   ├── database/        # 数据库连接
+    │   ├── di/              # 依赖注入
+    │   ├── models/          # 数据模型
+    │   ├── scripts/         # 脚本
+    │   ├── services/        # 服务层
+    │   ├── testAPI/         # 单元测试
+    │   └── utils/           # 工具函数
+    └── docs/                # 文档
+        ├── architecture.md  # 架构文档
+        ├── SynCraft API规范文档.md # API规范文档
+        └── testing_guide.md # 测试指南
 ```
 
-## 架构设计
+## 功能特点
 
-### 前端架构
+### 会话管理
 
-前端采用分层架构，主要包括：
+- 创建、查询、更新和删除会话
+- 会话树结构可视化
+- 会话上下文管理
 
-1. **API客户端层**：封装对后端API的调用，处理请求、响应和错误
-2. **仓储层**：处理数据持久化和缓存，提供数据访问接口
-3. **状态管理层**：使用Zustand管理应用状态
-4. **UI组件层**：React组件，处理用户交互和界面渲染
+### 节点和QA对
 
-### 数据流
+- 树状结构的节点管理
+- 问答对存储和检索
+- 标签和收藏功能
 
-1. 用户在UI上进行操作
-2. UI组件调用Store层的方法
-3. Store层调用仓储层的方法
-4. 仓储层调用API客户端层的方法
-5. API客户端层向后端发送请求
-6. 后端处理请求并返回响应
-7. 响应沿着相反的路径返回到UI
+### 上下文感知
+
+- 多种上下文模式：聊天、搜索、引用、摘要
+- 上下文节点关系管理
+- 活动节点跟踪
+
+### 搜索功能
+
+- 全文搜索QA对、节点和会话
+- 高亮显示匹配内容
+- 按标签和收藏筛选
+
+### LLM服务
+
+- 文本生成
+- 流式响应
+- 文本嵌入
+
+### 用户认证
+
+- JWT认证
+- 用户管理
+- 权限控制
+
+### WebSocket支持
+
+- 实时通信
+- 事件订阅
+- 流式生成回答
+
+## 架构特点
+
+### 分层架构
+- **API层**: 处理HTTP请求和响应
+- **服务层**: 实现业务逻辑
+- **模型层**: 定义数据结构和关系
+
+### 依赖注入
+使用自定义依赖注入容器管理服务实例，提高可测试性和可维护性。
+
+### 缓存机制
+使用内存缓存提高性能，减少数据库查询。
+
+### 单元测试
+使用pytest进行单元测试，确保代码质量和功能正确性。
+
+### LLM服务抽象
+使用接口和工厂模式抽象LLM服务，支持多种大语言模型，并便于测试。
+
+### 认证与授权
+使用JWT令牌进行用户认证，基于角色的访问控制确保数据安全。
+
+## 测试
+
+SynCraft项目有完善的测试套件，包括单元测试和集成测试。
+
+### 运行测试
+
+项目提供了一个便捷的测试脚本，可以一键运行所有测试并生成多种格式的报告：
+
+```bash
+# 在项目根目录下运行
+bash SynCraft/backend/run_tests_with_md_report.sh
+```
+
+或者手动运行测试：
+
+```bash
+# 运行所有测试
+pytest SynCraft/backend/app/testAPI
+
+# 运行特定测试文件
+pytest SynCraft/backend/app/testAPI/test_session_service.py
+
+# 生成测试覆盖率报告
+pytest SynCraft/backend/app/testAPI --cov=SynCraft/backend/app
+```
+
+### 测试覆盖率
+
+当前项目的测试覆盖率为80%，主要服务层模块的覆盖率超过90%。
+
+详细的测试指南请参考[testing_guide.md](./backend/docs/testing_guide.md)。
+
+## 安全性
+
+### 输入验证
+- 使用Pydantic模型验证请求数据
+- 使用FastAPI的依赖项验证请求参数
 
 ### 错误处理
+- 使用全局异常处理器处理异常
+- 返回适当的HTTP状态码和错误消息
 
-系统实现了完善的错误处理机制：
+### API密钥验证
+- 使用API密钥验证LLM服务请求
+- 在请求头中传递API密钥
 
-1. **API错误**：区分网络错误、超时错误、服务器错误、认证错误等
-2. **重试机制**：对于临时性网络问题，自动重试
-3. **回退机制**：API调用失败时，回退到本地存储
-4. **用户提示**：提供用户友好的错误提示
+### JWT认证
+- 使用JWT令牌进行用户认证
+- 令牌包含用户ID和权限信息
+- 令牌有过期时间，提高安全性
 
-### 缓存策略
-
-系统实现了多级缓存策略：
-
-1. **内存缓存**：使用Zustand存储当前会话的数据
-2. **IndexedDB**：使用IndexedDB存储所有会话的数据
-3. **API缓存**：缓存API响应，减少网络请求
+### 密码安全
+- 使用Bcrypt算法加密存储密码
+- 密码策略强制要求复杂性
+- 支持密码重置功能
 
 ## 贡献指南
 
+欢迎贡献代码、报告问题或提出改进建议。请遵循以下步骤：
+
 1. Fork项目
-2. 创建特性分支 (`git checkout -b feature/amazing-feature`)
+2. 创建功能分支 (`git checkout -b feature/amazing-feature`)
 3. 提交更改 (`git commit -m 'Add some amazing feature'`)
 4. 推送到分支 (`git push origin feature/amazing-feature`)
 5. 创建Pull Request
 
 ## 许可证
 
-本项目采用MIT许可证 - 详见 [LICENSE](LICENSE) 文件
-
-## 联系方式
-
-项目维护者 - 您的名字 - 您的邮箱
-
-项目链接: [https://github.com/yourusername/SynCraft](https://github.com/yourusername/SynCraft)
+本项目采用MIT许可证 - 详情请参见[LICENSE](LICENSE)文件。

@@ -2,7 +2,7 @@
 
 ## 1. 项目概述
 
-SynCraft 是一个基于对话的知识管理系统，允许用户创建会话、提问问题、深入挖掘特定主题，并在多个节点之间建立关联。系统采用树状结构组织对话，支持上下文切换和深度探索。
+SynCraft 是一个基于对话的知识管理系统，允许用户创建会话、提问问题、深入挖掘特定主题，并在多个节点之间建立关联。系统采用树状结构组织对话，支持上下文切换和深度探索。系统还包含用户认证和权限管理功能，确保数据安全和访问控制。
 
 ## 2. 技术栈
 
@@ -14,12 +14,17 @@ SynCraft 是一个基于对话的知识管理系统，允许用户创建会话�
 - **依赖注入**: 自定义DI容器
 - **缓存**: 内存缓存
 - **LLM集成**: 支持多种大语言模型服务
+- **认证**: JWT令牌认证
+- **密码加密**: Passlib with Bcrypt
 
 ### 前端
 - **语言**: TypeScript
 - **框架**: React
-- **状态管理**: 自定义Store
+- **状态管理**: 自定义Store + Zustand
 - **样式**: TailwindCSS
+- **路由**: React Router
+- **数据获取**: React Query
+- **表单处理**: 自定义hooks
 
 ## 3. 项目结构
 
@@ -35,7 +40,9 @@ backend/app/
 │   ├── contexts.py       # 上下文相关API
 │   ├── context_nodes.py  # 上下文节点关系相关API
 │   ├── search.py         # 搜索相关API
-│   └── llm.py            # LLM服务相关API
+│   ├── llm.py            # LLM服务相关API
+│   ├── auth.py           # 认证相关API
+│   └── admin.py          # 管理员相关API
 ├── models/               # 数据模型定义
 │   ├── __init__.py
 │   ├── session.py        # 会话模型
@@ -44,7 +51,8 @@ backend/app/
 │   ├── context.py        # 上下文模型
 │   ├── context_node.py   # 上下文节点关系模型
 │   ├── qapair.py         # 问答对模型
-│   └── message.py        # 消息模型
+│   ├── message.py        # 消息模型
+│   └── user.py           # 用户模型
 ├── services/             # 业务逻辑
 │   ├── __init__.py
 │   ├── session_service.py # 会话服务
@@ -64,12 +72,18 @@ backend/app/
 │   ├── __init__.py
 │   ├── ner.py            # 命名实体识别
 │   └── prompt.py         # 提示词构建
+├── core/                 # 核心功能
+│   ├── __init__.py
+│   └── security.py       # 安全相关功能
 ├── di/                   # 依赖注入
 │   ├── __init__.py
 │   └── container.py      # 依赖注入容器
 ├── cache/                # 缓存
 │   ├── __init__.py
 │   └── cache_manager.py  # 缓存管理器
+├── scripts/              # 脚本
+│   ├── __init__.py
+│   └── init_users.py     # 初始化用户脚本
 └── testAPI/              # 单元测试
     ├── __init__.py
     ├── conftest.py       # 测试配置
@@ -108,15 +122,19 @@ backend/app/
 ### 4.8 LLM服务 (LLM Service)
 LLM服务提供与大语言模型的集成，用于生成回答、摘要和其他AI生成内容。
 
+### 4.9 用户 (User)
+用户是系统的使用者，拥有自己的身份认证和权限。系统支持多用户操作，每个用户可以拥有多个会话。
+
 ## 5. 数据流
 
-1. 用户创建会话
-2. 系统自动创建根节点和主聊天上下文
-3. 用户在会话中提问
-4. 系统通过LLM服务生成回答
-5. 系统创建问答对和消息
-6. 用户可以在现有节点上继续提问，或创建子节点深入探讨
-7. 用户可以切换上下文，专注于特定主题
+1. 用户登录系统，获取JWT令牌
+2. 用户创建会话或选择现有会话
+3. 系统自动创建根节点和主聊天上下文（对于新会话）
+4. 用户在会话中提问
+5. 系统通过LLM服务生成回答
+6. 系统创建问答对和消息
+7. 用户可以在现有节点上继续提问，或创建子节点深入探讨
+8. 用户可以切换上下文，专注于特定主题
 
 ## 6. 架构特点
 
@@ -137,18 +155,67 @@ LLM服务提供与大语言模型的集成，用于生成回答、摘要和其�
 ### 6.5 LLM服务抽象
 使用接口和工厂模式抽象LLM服务，支持多种大语言模型，并便于测试。
 
+### 6.6 认证与授权
+使用JWT令牌进行用户认证，基于角色的访问控制确保数据安全。
+
 ## 7. API文档
 
-### 7.1 会话API
+### 7.1 认证API
 
-#### 创建会话
-- **URL**: `/sessions`
+#### 用户登录
+- **URL**: `/auth/login`
 - **方法**: POST
 - **请求体**:
   ```json
   {
-    "name": "会话名称",
-    "user_id": "用户ID"
+    "username": "用户名",
+    "password": "密码"
+  }
+  ```
+- **响应**:
+  ```json
+  {
+    "access_token": "JWT令牌",
+    "token_type": "bearer",
+    "user": {
+      "id": "用户ID",
+      "username": "用户名",
+      "email": "邮箱",
+      "is_admin": false
+    }
+  }
+  ```
+
+#### 修改密码
+- **URL**: `/auth/change-password`
+- **方法**: POST
+- **请求头**:
+  - `Authorization`: Bearer {token}
+- **请求体**:
+  ```json
+  {
+    "current_password": "当前密码",
+    "new_password": "新密码"
+  }
+  ```
+- **响应**:
+  ```json
+  {
+    "message": "密码已更新"
+  }
+  ```
+
+### 7.2 会话API
+
+#### 创建会话
+- **URL**: `/sessions`
+- **方法**: POST
+- **请求头**:
+  - `Authorization`: Bearer {token}
+- **请求体**:
+  ```json
+  {
+    "name": "会话名称"
   }
   ```
 - **响应**:
@@ -166,8 +233,9 @@ LLM服务提供与大语言模型的集成，用于生成回答、摘要和其�
 #### 获取会话列表
 - **URL**: `/sessions`
 - **方法**: GET
+- **请求头**:
+  - `Authorization`: Bearer {token}
 - **查询参数**:
-  - `user_id`: 用户ID
   - `limit`: 每页数量
   - `offset`: 偏移量
   - `sort_by`: 排序字段
@@ -192,6 +260,8 @@ LLM服务提供与大语言模型的集成，用于生成回答、摘要和其�
 #### 获取会话详情
 - **URL**: `/sessions/{session_id}`
 - **方法**: GET
+- **请求头**:
+  - `Authorization`: Bearer {token}
 - **响应**:
   ```json
   {
@@ -216,6 +286,8 @@ LLM服务提供与大语言模型的集成，用于生成回答、摘要和其�
 #### 更新会话
 - **URL**: `/sessions/{session_id}`
 - **方法**: PUT
+- **请求头**:
+  - `Authorization`: Bearer {token}
 - **请求体**:
   ```json
   {
@@ -237,6 +309,8 @@ LLM服务提供与大语言模型的集成，用于生成回答、摘要和其�
 #### 删除会话
 - **URL**: `/sessions/{session_id}`
 - **方法**: DELETE
+- **请求头**:
+  - `Authorization`: Bearer {token}
 - **响应**:
   ```json
   {
@@ -245,11 +319,13 @@ LLM服务提供与大语言模型的集成，用于生成回答、摘要和其�
   }
   ```
 
-### 7.2 节点API
+### 7.3 节点API
 
 #### 创建节点
 - **URL**: `/nodes`
 - **方法**: POST
+- **请求头**:
+  - `Authorization`: Bearer {token}
 - **请求体**:
   ```json
   {
@@ -276,6 +352,8 @@ LLM服务提供与大语言模型的集成，用于生成回答、摘要和其�
 #### 获取节点详情
 - **URL**: `/nodes/{node_id}`
 - **方法**: GET
+- **请求头**:
+  - `Authorization`: Bearer {token}
 - **查询参数**:
   - `include_children`: 是否包含子节点
   - `children_depth`: 子节点深度
@@ -317,11 +395,13 @@ LLM服务提供与大语言模型的集成，用于生成回答、摘要和其�
   }
   ```
 
-### 7.3 问答对API
+### 7.4 问答对API
 
 #### 创建问答对
 - **URL**: `/qa_pairs`
 - **方法**: POST
+- **请求头**:
+  - `Authorization`: Bearer {token}
 - **请求体**:
   ```json
   {
@@ -350,6 +430,8 @@ LLM服务提供与大语言模型的集成，用于生成回答、摘要和其�
 #### 向节点提问
 - **URL**: `/nodes/{node_id}/ask`
 - **方法**: POST
+- **请求头**:
+  - `Authorization`: Bearer {token}
 - **查询参数**:
   - `question`: 问题
 - **响应**:
@@ -367,11 +449,13 @@ LLM服务提供与大语言模型的集成，用于生成回答、摘要和其�
   }
   ```
 
-### 7.4 上下文API
+### 7.5 上下文API
 
 #### 创建上下文
 - **URL**: `/contexts`
 - **方法**: POST
+- **请求头**:
+  - `Authorization`: Bearer {token}
 - **请求体**:
   ```json
   {
@@ -397,12 +481,101 @@ LLM服务提供与大语言模型的集成，用于生成回答、摘要和其�
   }
   ```
 
-### 7.5 LLM API
+### 7.6 管理员API
+
+#### 获取用户列表
+- **URL**: `/admin/users`
+- **方法**: GET
+- **请求头**:
+  - `Authorization`: Bearer {token}
+- **响应**:
+  ```json
+  {
+    "total": 总数,
+    "items": [
+      {
+        "id": "用户ID",
+        "username": "用户名",
+        "email": "邮箱",
+        "is_active": true,
+        "is_admin": false,
+        "created_at": "创建时间"
+      }
+    ]
+  }
+  ```
+
+#### 创建用户
+- **URL**: `/admin/users`
+- **方法**: POST
+- **请求头**:
+  - `Authorization`: Bearer {token}
+- **请求体**:
+  ```json
+  {
+    "username": "用户名",
+    "email": "邮箱",
+    "password": "密码",
+    "is_admin": false
+  }
+  ```
+- **响应**:
+  ```json
+  {
+    "id": "用户ID",
+    "username": "用户名",
+    "email": "邮箱",
+    "is_active": true,
+    "is_admin": false,
+    "created_at": "创建时间"
+  }
+  ```
+
+#### 更新用户
+- **URL**: `/admin/users/{user_id}`
+- **方法**: PUT
+- **请求头**:
+  - `Authorization`: Bearer {token}
+- **请求体**:
+  ```json
+  {
+    "is_active": true,
+    "is_admin": false
+  }
+  ```
+- **响应**:
+  ```json
+  {
+    "id": "用户ID",
+    "username": "用户名",
+    "email": "邮箱",
+    "is_active": true,
+    "is_admin": false,
+    "created_at": "创建时间",
+    "updated_at": "更新时间"
+  }
+  ```
+
+#### 删除用户
+- **URL**: `/admin/users/{user_id}`
+- **方法**: DELETE
+- **请求头**:
+  - `Authorization`: Bearer {token}
+- **响应**:
+  ```json
+  {
+    "success": true,
+    "message": "用户已删除"
+  }
+  ```
+
+### 7.7 LLM API
 
 #### 调用LLM获取回答
 - **URL**: `/api/v1/ask`
 - **方法**: POST
 - **请求头**:
+  - `Authorization`: Bearer {token}
   - `X-API-Key`: API密钥
 - **请求体**:
   ```json
@@ -456,6 +629,16 @@ LLM服务提供与大语言模型的集成，用于生成回答、摘要和其�
 - 使用API密钥验证LLM服务请求
 - 在请求头中传递API密钥
 
+### 9.4 JWT认证
+- 使用JWT令牌进行用户认证
+- 令牌包含用户ID和权限信息
+- 令牌有过期时间，提高安全性
+
+### 9.5 密码安全
+- 使用Bcrypt算法加密存储密码
+- 密码策略强制要求复杂性
+- 支持密码重置功能
+
 ## 10. 可扩展性
 
 ### 10.1 模块化设计
@@ -471,6 +654,11 @@ LLM服务提供与大语言模型的集成，用于生成回答、摘要和其�
 - 使用工厂模式创建LLM服务实例
 - 支持多种LLM服务提供商
 
+### 10.4 多用户支持
+- 系统设计支持多用户并发操作
+- 数据隔离确保用户只能访问自己的数据
+- 基于角色的访问控制支持不同权限级别
+
 ## 11. 测试策略
 
 ### 11.1 单元测试
@@ -484,6 +672,11 @@ LLM服务提供与大语言模型的集成，用于生成回答、摘要和其�
 ### 11.3 LLM服务测试
 - 使用模拟LLM服务进行测试
 - 在测试环境中设置TESTING=true启用模拟服务
+
+### 11.4 认证测试
+- 测试JWT令牌生成和验证
+- 测试权限检查和访问控制
+- 测试密码加密和验证
 
 ## 12. 部署
 

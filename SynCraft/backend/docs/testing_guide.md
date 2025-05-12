@@ -162,6 +162,54 @@ def test_create_and_get_session(client: TestClient):
     assert session_id in session_ids
 ```
 
+### 3.4 端到端测试
+
+端到端测试模拟真实用户场景，测试整个系统的功能。例如，测试用户登录、创建会话、添加节点和问答对、搜索内容等完整流程。
+
+```python
+def test_complete_user_flow(client: TestClient):
+    """测试完整用户流程"""
+    # 用户登录
+    login_response = client.post(
+        "/auth/login",
+        json={"username": "test_user", "password": "test_password"}
+    )
+    assert login_response.status_code == 200
+    token = login_response.json()["access_token"]
+    
+    # 创建会话
+    headers = {"Authorization": f"Bearer {token}"}
+    session_response = client.post(
+        "/sessions",
+        json={"name": "测试会话"},
+        headers=headers
+    )
+    assert session_response.status_code == 200
+    session_id = session_response.json()["id"]
+    root_node_id = session_response.json()["root_node_id"]
+    
+    # 创建问答对
+    qa_response = client.post(
+        "/qa_pairs",
+        json={
+            "node_id": root_node_id,
+            "session_id": session_id,
+            "question": "测试问题",
+            "answer": "测试回答"
+        },
+        headers=headers
+    )
+    assert qa_response.status_code == 200
+    
+    # 搜索问答对
+    search_response = client.get(
+        "/search/qa_pairs?query=测试",
+        headers=headers
+    )
+    assert search_response.status_code == 200
+    assert search_response.json()["total"] >= 1
+```
+
 ## 4. 已实现的测试用例
 
 ### 4.1 会话服务测试 (SessionService)
@@ -287,6 +335,18 @@ def test_create_and_get_session(client: TestClient):
 | test_search_qa_pairs_no_results | 测试搜索无结果的问答对API | test_api_qa_pairs.py |
 | test_search_qa_pairs_pagination | 测试搜索问答对分页API | test_api_qa_pairs.py |
 
+### 4.7 用户认证测试
+
+| 测试用例 | 描述 | 文件 |
+|---------|------|------|
+| test_login | 测试用户登录 | test_api_auth.py |
+| test_login_invalid_credentials | 测试无效凭据登录 | test_api_auth.py |
+| test_refresh_token | 测试刷新令牌 | test_api_auth.py |
+| test_refresh_token_invalid | 测试无效令牌刷新 | test_api_auth.py |
+| test_get_current_user | 测试获取当前用户 | test_api_auth.py |
+| test_change_password | 测试修改密码 | test_api_auth.py |
+| test_change_password_invalid | 测试无效密码修改 | test_api_auth.py |
+
 ## 5. 测试覆盖率
 
 当前项目的测试覆盖率为80%，这是一个相对较好的覆盖率水平。以下是各模块的覆盖率情况：
@@ -319,6 +379,16 @@ def test_create_and_get_session(client: TestClient):
 1. 复杂的错误处理路径难以测试
 2. 依赖外部服务的代码（如real_llm_service.py依赖实际的LLM服务）
 3. 某些API端点的复杂逻辑或边缘情况未被测试
+
+### 5.4 提高测试覆盖率的策略
+
+为了提高测试覆盖率，可以采取以下策略：
+
+1. **识别关键路径**：优先测试核心业务逻辑和关键路径
+2. **模拟外部依赖**：使用模拟对象替代外部服务和依赖
+3. **边缘情况测试**：添加针对边缘情况和错误处理的测试
+4. **参数化测试**：使用参数化测试覆盖多种输入场景
+5. **代码重构**：重构复杂代码，使其更易于测试
 
 ## 6. 测试数据
 
@@ -461,11 +531,69 @@ def test_get_session(db_session: Session, test_data):
     assert result["contexts"][0].id == test_data["context"].id
 ```
 
+### 6.3 测试数据工厂
+
+为了更灵活地创建测试数据，可以使用测试数据工厂模式：
+
+```python
+class TestDataFactory:
+    @staticmethod
+    def create_session(db_session: Session, name: str = "测试会话") -> SessionModel:
+        """创建测试会话"""
+        session = SessionModel(name=name)
+        db_session.add(session)
+        db_session.commit()
+        db_session.refresh(session)
+        return session
+    
+    @staticmethod
+    def create_node(db_session: Session, session_id: str, parent_id: Optional[str] = None) -> Node:
+        """创建测试节点"""
+        node = Node(
+            session_id=session_id,
+            parent_id=parent_id,
+            template_key="test"
+        )
+        db_session.add(node)
+        db_session.commit()
+        db_session.refresh(node)
+        return node
+    
+    @staticmethod
+    def create_qa_pair(db_session: Session, node_id: str, session_id: str) -> QAPair:
+        """创建测试问答对"""
+        qa_pair = QAPair(
+            node_id=node_id,
+            session_id=session_id
+        )
+        db_session.add(qa_pair)
+        db_session.commit()
+        db_session.refresh(qa_pair)
+        return qa_pair
+```
+
 ## 7. 模拟和打桩
 
 ### 7.1 模拟数据库
 
 测试使用内存数据库（SQLite）代替实际数据库，提高测试速度和隔离性。
+
+```python
+@pytest.fixture
+def db_session():
+    """创建测试数据库会话"""
+    # 创建内存数据库引擎
+    engine = create_engine("sqlite:///:memory:")
+    # 创建表
+    Base.metadata.create_all(engine)
+    # 创建会话
+    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+```
 
 ### 7.2 模拟大模型调用
 
@@ -477,6 +605,56 @@ export TESTING=true
 ```
 
 这会使用 `mock_llm_service.py` 代替 `real_llm_service.py`，返回预定义的回答而不是实际调用大模型。
+
+```python
+# mock_llm_service.py
+class MockLLMService(LLMInterface):
+    """模拟LLM服务，用于测试"""
+    
+    def generate(self, prompt: str, **kwargs) -> str:
+        """生成回答"""
+        return f"这是对'{prompt}'的模拟回答"
+    
+    def generate_stream(self, prompt: str, **kwargs) -> Generator[str, None, None]:
+        """流式生成回答"""
+        words = f"这是对'{prompt}'的模拟回答".split()
+        for word in words:
+            yield word + " "
+    
+    def embed(self, text: str, **kwargs) -> List[float]:
+        """嵌入文本"""
+        # 返回固定长度的随机向量
+        return [random.random() for _ in range(10)]
+```
+
+### 7.3 模拟HTTP请求
+
+使用FastAPI的TestClient模拟HTTP请求，避免启动实际服务器：
+
+```python
+@pytest.fixture
+def client() -> TestClient:
+    """创建测试客户端"""
+    from app.main import app
+    return TestClient(app)
+```
+
+### 7.4 模拟用户认证
+
+在测试中模拟用户认证，避免实际登录流程：
+
+```python
+@pytest.fixture
+def auth_headers() -> Dict[str, str]:
+    """创建认证头"""
+    # 创建测试令牌
+    token = create_access_token(
+        data={"sub": "test_user"},
+        expires_delta=timedelta(minutes=30)
+    )
+    # 返回认证头
+    return {"Authorization": f"Bearer {token}"}
+```
 
 ## 8. 前端开发者指南
 
@@ -513,6 +691,27 @@ export TESTING=true
 2. 请求参数和请求体
 3. 实际响应和预期响应
 4. 错误消息和堆栈跟踪（如果有）
+
+### 8.5 前端测试与后端API的集成
+
+前端测试可以使用模拟后端API响应，但也应该进行一些集成测试，确保前后端交互正常：
+
+```typescript
+// 前端集成测试示例
+describe('Session API Integration', () => {
+  it('should create a session and retrieve it', async () => {
+    // 创建会话
+    const createResponse = await api.createSession({ name: 'Test Session' });
+    expect(createResponse.status).toBe(200);
+    const sessionId = createResponse.data.id;
+    
+    // 获取会话
+    const getResponse = await api.getSession(sessionId);
+    expect(getResponse.status).toBe(200);
+    expect(getResponse.data.name).toBe('Test Session');
+  });
+});
+```
 
 ## 9. 测试命令
 
@@ -600,6 +799,19 @@ test:
     - pytest app/testAPI --cov=app
 ```
 
+### 10.3 自动化测试报告
+
+配置CI系统生成和发布测试报告：
+
+```yaml
+# GitHub Actions中发布测试报告
+- name: Publish Test Report
+  uses: actions/upload-artifact@v2
+  with:
+    name: test-report
+    path: backend/test_reports/
+```
+
 ## 11. 测试最佳实践
 
 1. **测试隔离**：每个测试应该独立运行，不依赖其他测试的状态
@@ -609,3 +821,112 @@ test:
 5. **测试断言**：使用具体的断言，而不是笼统的 `assert True`
 6. **测试文档**：为测试函数添加文档字符串，说明测试的目的和步骤
 7. **测试清理**：使用 `teardown` 函数清理测试数据和状态
+
+## 12. 测试驱动开发 (TDD)
+
+SynCraft项目鼓励使用测试驱动开发方法，遵循以下步骤：
+
+1. **编写测试**：首先编写测试，描述期望的行为
+2. **运行测试**：确认测试失败，因为功能尚未实现
+3. **实现功能**：编写最简单的代码使测试通过
+4. **重构代码**：优化代码，确保测试仍然通过
+5. **重复过程**：继续添加新的测试和功能
+
+### 12.1 TDD示例
+
+```python
+# 1. 编写测试
+def test_create_session_with_custom_root_node(db_session: Session):
+    """测试创建带有自定义根节点的会话"""
+    # 创建SessionService
+    session_service = SessionService(db_session)
+    
+    # 创建会话
+    result = session_service.create_session(
+        name="测试会话",
+        root_node_template="custom_template"
+    )
+    
+    # 验证结果
+    assert result["name"] == "测试会话"
+    assert result["user_id"] == "local"
+    assert result["root_node_id"] is not None
+    
+    # 获取根节点
+    node_service = NodeService(db_session)
+    root_node = node_service.get_node(result["root_node_id"])
+    assert root_node["template_key"] == "custom_template"
+
+# 2. 运行测试（会失败）
+# 3. 实现功能
+def create_session(self, name: str, root_node_template: str = "root") -> Dict[str, Any]:
+    """创建会话"""
+    # 创建会话
+    session = SessionModel(name=name, user_id="local")
+    self.db.add(session)
+    self.db.commit()
+    self.db.refresh(session)
+    
+    # 创建根节点
+    node = Node(
+        session_id=session.id,
+        template_key=root_node_template
+    )
+    self.db.add(node)
+    self.db.commit()
+    self.db.refresh(node)
+    
+    # 更新会话的根节点ID
+    session.root_node_id = node.id
+    self.db.add(session)
+    self.db.commit()
+    self.db.refresh(session)
+    
+    # 返回会话信息
+    return {
+        "id": session.id,
+        "name": session.name,
+        "root_node_id": session.root_node_id,
+        "created_at": session.created_at,
+        "updated_at": session.updated_at,
+        "user_id": session.user_id
+    }
+
+# 4. 运行测试（应该通过）
+# 5. 重构代码（如果需要）
+```
+
+## 13. 测试维护
+
+### 13.1 测试代码审查
+
+测试代码应该像产品代码一样进行审查，确保测试质量：
+
+1. 测试是否覆盖了所有关键路径
+2. 测试是否清晰表达了期望行为
+3. 测试是否易于维护
+4. 测试是否有适当的断言
+
+### 13.2 测试重构
+
+随着产品代码的演进，测试代码也需要重构：
+
+1. 提取重复的测试代码到辅助函数
+2. 更新测试以反映新的需求和行为
+3. 删除过时的测试
+4. 优化测试性能
+
+### 13.3 测试文档
+
+保持测试文档的更新，帮助团队理解测试：
+
+1. 更新本测试指南
+2. 为新的测试用例添加描述
+3. 记录测试覆盖率变化
+4. 分享测试最佳实践
+
+## 14. 结论
+
+SynCraft项目的测试策略旨在确保代码质量和功能正确性。通过单元测试、集成测试和端到端测试，我们可以验证系统的各个部分是否按预期工作。测试覆盖率报告帮助我们识别需要改进的区域，持续集成确保测试在每次代码变更时运行。
+
+遵循本指南中的最佳实践，可以编写高质量的测试，提高代码质量，减少缺陷，并使系统更易于维护和扩展。

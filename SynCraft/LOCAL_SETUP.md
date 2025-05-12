@@ -8,7 +8,7 @@
 
 - **Node.js** (v16.0.0或更高版本)
 - **Python** (v3.9或更高版本)
-- **PostgreSQL** (v13或更高版本)
+- **SQLite** (用于开发环境)或 **PostgreSQL** (v13或更高版本，用于生产环境)
 - **Git**
 
 您可以使用以下命令检查它们是否已安装：
@@ -16,7 +16,7 @@
 ```bash
 node --version
 python --version
-psql --version
+sqlite3 --version  # 或 psql --version
 git --version
 ```
 
@@ -59,32 +59,43 @@ cp .env.example .env
 使用您喜欢的文本编辑器打开`.env`文件，并根据您的本地环境设置以下变量：
 
 ```
-DATABASE_URL=postgresql://username:password@localhost:5432/syncraft
+# 开发环境使用SQLite
+DATABASE_URL=sqlite:///./syncraft.db
+# 生产环境使用PostgreSQL
+# DATABASE_URL=postgresql://username:password@localhost:5432/syncraft
 SECRET_KEY=your_secret_key_here
 DEBUG=True
+LLM_API_KEY=your_llm_api_key_here  # 如果使用真实LLM服务
+TESTING=false  # 设置为true使用模拟LLM服务
 ```
 
-请将`username`、`password`替换为您的PostgreSQL用户名和密码。
+请将`username`、`password`替换为您的PostgreSQL用户名和密码（如果使用PostgreSQL）。
 
-### 2.4 创建数据库
+### 2.4 初始化数据库
 
-在PostgreSQL中创建数据库：
-
-```bash
-psql -U postgres
-```
-
-在PostgreSQL命令行中执行：
-
-```sql
-CREATE DATABASE syncraft;
-```
-
-### 2.5 初始化数据库
+对于SQLite（开发环境）：
 
 ```bash
 python init_db.py
 ```
+
+对于PostgreSQL（生产环境）：
+
+```bash
+# 在PostgreSQL中创建数据库
+psql -U postgres -c "CREATE DATABASE syncraft;"
+
+# 初始化数据库
+python init_db.py
+```
+
+### 2.5 初始化用户
+
+```bash
+python -m app.scripts.init_users
+```
+
+这将创建默认的管理员用户（用户名：admin，密码：admin）。
 
 ### 2.6 启动后端服务器
 
@@ -101,7 +112,7 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 在新的终端窗口中，导航到项目的前端目录：
 
 ```bash
-cd SynCraft/frontend
+cd SynCraft/frontend-refactored
 npm install
 ```
 
@@ -131,6 +142,10 @@ npm run dev
 
 打开浏览器，访问`http://localhost:5173`即可使用SynCraft应用。
 
+默认登录凭据：
+- 用户名：admin
+- 密码：admin
+
 ## 5. 常见问题解决
 
 ### 5.1 后端连接问题
@@ -145,7 +160,7 @@ npm run dev
 
 如果后端无法连接到数据库，请检查：
 
-1. PostgreSQL服务是否正在运行
+1. 数据库文件（SQLite）或服务（PostgreSQL）是否存在和正常
 2. `.env`文件中的数据库URL是否正确
 3. 数据库用户是否有足够的权限
 
@@ -163,9 +178,17 @@ npm cache clean --force
 npm install
 ```
 
+### 5.4 LLM服务问题
+
+如果LLM服务无法正常工作，请检查：
+
+1. `.env`文件中的LLM_API_KEY是否正确
+2. 网络连接是否正常
+3. 如果只是测试，可以设置TESTING=true使用模拟LLM服务
+
 ## 6. 使用Docker启动（推荐方式）
 
-SynCraft项目已经完全容器化，使用Docker是最简单、最一致的启动方式。这种方式不需要在本地安装Python、Node.js或PostgreSQL，只需要安装Docker和Docker Compose。
+SynCraft项目已经完全容器化，使用Docker是最简单、最一致的启动方式。这种方式不需要在本地安装Python、Node.js或数据库，只需要安装Docker和Docker Compose。
 
 ### 6.1 安装Docker和Docker Compose
 
@@ -194,6 +217,7 @@ docker-compose up
 这将启动以下服务：
 - **前端服务**：运行在Node.js容器中，端口映射为`3000:5173`
 - **后端服务**：使用自定义Dockerfile构建，端口映射为`8000:8000`
+- **数据库服务**：使用SQLite或PostgreSQL，取决于配置
 
 首次启动可能需要一些时间来构建镜像和安装依赖。
 
@@ -266,21 +290,29 @@ docker-compose up --build
 
 ```bash
 cd backend
-pytest
+pytest app/testAPI
 ```
 
-或者生成测试报告：
+或者生成测试覆盖率报告：
+
+```bash
+pytest app/testAPI --cov=app --cov-report=html
+```
+
+或者使用提供的测试脚本：
 
 ```bash
 ./run_tests_with_md_report.sh
 ```
+
+这将运行所有测试并生成多种格式的报告，包括HTML格式的覆盖率报告和Markdown格式的测试结果报告。
 
 ### 7.2 前端开发
 
 在开发前端时，您可以使用以下命令运行测试：
 
 ```bash
-cd frontend
+cd frontend-refactored
 npm test
 ```
 
@@ -290,12 +322,61 @@ npm test
 npm run lint
 ```
 
+### 7.3 调试模式
+
+#### 后端调试
+
+在VSCode中，您可以使用以下配置进行后端调试：
+
+```json
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Python: FastAPI",
+      "type": "python",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": [
+        "app.main:app",
+        "--reload",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000"
+      ],
+      "jinja": true,
+      "justMyCode": false
+    }
+  ]
+}
+```
+
+#### 前端调试
+
+在浏览器中使用开发者工具进行前端调试。在VSCode中，您可以使用以下配置进行前端调试：
+
+```json
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "chrome",
+      "request": "launch",
+      "name": "Launch Chrome against localhost",
+      "url": "http://localhost:5173",
+      "webRoot": "${workspaceFolder}/frontend-refactored"
+    }
+  ]
+}
+```
+
 ## 8. 生产环境构建
 
 ### 8.1 构建前端
 
 ```bash
-cd frontend
+cd frontend-refactored
 npm run build
 ```
 
@@ -307,6 +388,7 @@ npm run build
 
 ```
 DEBUG=False
+DATABASE_URL=postgresql://username:password@localhost:5432/syncraft
 ```
 
 ### 8.3 启动生产服务器
@@ -319,3 +401,38 @@ gunicorn app.main:app -k uvicorn.workers.UvicornWorker -w 4 -b 0.0.0.0:8000
 ## 9. 项目结构参考
 
 请参考项目根目录下的`README.md`文件，了解项目的详细结构和架构设计。
+
+## 10. 系统架构
+
+SynCraft系统由前端和后端两部分组成：
+
+### 前端
+
+前端使用React + TypeScript + Vite构建，主要组件包括：
+
+- 会话列表页面
+- 聊天页面
+- 用户管理页面
+- 树状视图组件
+- 深度探索面板
+
+### 后端
+
+后端使用Python + FastAPI构建，主要模块包括：
+
+- API接口层：处理HTTP请求和响应
+- 服务层：实现业务逻辑
+- 模型层：定义数据结构和关系
+- 数据库层：数据存储和查询
+- LLM服务层：集成大语言模型
+- 缓存层：提高性能
+
+详细的架构文档请参考[architecture.md](./backend/docs/architecture.md)。
+
+## 11. API文档
+
+详细的API文档请参考[SynCraft API规范文档](./backend/docs/SynCraft%20API规范文档.md)。
+
+## 12. 测试指南
+
+详细的测试指南请参考[testing_guide.md](./backend/docs/testing_guide.md)。
